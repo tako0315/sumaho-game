@@ -9,10 +9,13 @@
   ・スマホを ボトルに みたてて たてに もち、かたむけると そそぎ はじめる
   ・いちど そそぎ はじめたら いきおいは かえられない。もどすと とまる（そそげるのは 1かいだけ）
   ・とめても すこし おくれて でてくる。コップから こぼれる ギリギリを ねらえ！ こぼれたら 0てん
+  ・ひょうめんちょうりょく: ふちを こえても すこし もりあがって もつ。もりあがった ぶんは ボーナス（さいだい +20）
+  ・モニターは 3D（three.js）
   ・3かい: ジュース → ほそい グラス（はやい）→ ソーダ（あわが ふくらむ）
 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 /* PAD きょうつう: モニターは キャンバス 1まい、スマホは #pad の なか */
 :root{--ink:#3a2328;--paper:#fffaf0;--ok:#2f9e5b;--blue:#4a9fe0;--me:#3a2328;--head:#3a2328}
@@ -47,6 +50,12 @@ button.sub:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
 [hidden]{display:none!important}
 canvas#gl{display:block;position:fixed;inset:0;width:100%;height:100%}
 body.pad #gl{display:none}
+#gyro{position:fixed;right:10px;bottom:10px;z-index:20;font:inherit;font-size:14px;font-weight:bold;color:#fff;background:#5b6b7a;border:3px solid var(--ink);border-radius:99px;padding:8px 14px;box-shadow:0 3px 0 var(--ink)}
+#gyro:active{transform:translateY(2px);box-shadow:0 1px 0 var(--ink)}
+body:not(.pad) #gyro{display:none}
+#pad main{padding-bottom:64px}
+#home{position:fixed;left:12px;top:10px;z-index:20;font-size:15px;font-weight:bold;color:var(--ink);background:#fffaf0;border:3px solid var(--ink);border-radius:99px;padding:6px 14px;text-decoration:none;box-shadow:0 3px 0 var(--ink)}
+body.pad #home{display:none}
 
 :root{--head:#2e6f8e}
 #bottle{display:block;margin:4px auto}
@@ -55,6 +64,7 @@ body.pad #gl{display:none}
 </style>
 </head>
 <body>
+<canvas id="gl"></canvas>
 <canvas id="cv"></canvas>
 <div id="pad">
   <header><h1>こぼれる ギリギリ</h1><span id="badge">…</span></header>
@@ -73,6 +83,7 @@ body.pad #gl{display:none}
           <li>かたむけると そそぎ はじめる。いきおいは かえられない！</li>
           <li>まっすぐに もどすか「とめる！」で ストップ。そそげるのは 1かいだけ</li>
           <li>とめても すこし おくれて でてくるよ。コップの ふちギリギリを ねらおう</li>
+          <li>ふちを こえても すこしは もりあがって こぼれない（ひょうめんちょうりょく）。もりあがるほど ボーナス！</li>
           <li>こぼれたら 0てん。ソーダは あわが ふくらむので ちゅうい！</li>
         </ol>
       </div>
@@ -337,8 +348,8 @@ const PAD = (() => {
         a.forEach((r, i) => { r.place = i && a[i - 1][key] === r[key] ? a[i - 1].place : i + 1; }); return a;
       },
       soundHint(W, H) {
-        if (sfx.ok()) return; const h = H * 0.055, w = h * 6.8, x = (W - w) / 2, y = H - h - 10;  // した まんなか
-        D.panel(x, y, w, h, '#fff3c4', 12); D.text('クリックすると おとが でるよ', x + w / 2, y + h / 2, h * 0.36);
+        if (sfx.ok()) return; const h = H * 0.055, w = h * 12.5, x = (W - w) / 2, y = H - h - 10;  // した まんなか
+        D.panel(x, y, w, h, '#fff3c4', 12); D.text('クリックすると おとが でるよ（いちらんから ひらくと さいしょから なる）', x + w / 2, y + h / 2, h * 0.34);
       },
     };
     return D;
@@ -385,7 +396,7 @@ const PAD = (() => {
      spec: { id, title, sub, min, max, bg, init(members), update(dt), draw(), onData(p, d), stateFor(p), onKey(e), resize(W, H) }
      api.finish(title, rows) で けっか。rows: [{ color, a, b, hi }] */
   function game(spec) {
-    const api = { st: 'lobby', t: 0, members: [], final: null };
+    const api = { st: 'lobby', t: 0, members: [], final: null }; let toast = null;
     const { cx, S } = canvas(document.getElementById('cv'), (W, H) => spec.resize && spec.resize(W, H));
     const D = draw(cx); Object.assign(api, { cx, D, S });
     const min = spec.min || 1;
@@ -397,10 +408,12 @@ const PAD = (() => {
         if (d.t === 'ready') { p.ready = true; push(); return; }
         if (d.t === 'start') { if (isHost(p) && (api.st === 'lobby' || api.st === 'final')) begin(); return; }
         if (d.t === 'lobby') { if (isHost(p) && api.st === 'final') { api.st = 'lobby'; push(); } return; }
+        if (d.t === 'recal') { toast = { txt: p.name + ' ジャイロ リセット', t: 0, c: p.color }; spec.onRecal && spec.onRecal(p); return; }
         if (api.st === 'play' || spec.dataAlways) spec.onData && spec.onData(p, d);
       },
     });
     api.room = room;
+    const home = document.createElement('a'); home.id = 'home'; home.href = '../index.html'; home.textContent = '← いちらん'; document.body.appendChild(home);
     const isHost = p => { const l = room.list(); return !!l.length && l[0].pid === p.pid; };
     function begin() {
       const l = room.list();
@@ -443,6 +456,8 @@ const PAD = (() => {
         if (api.st === 'play' && api.t < 1) D.text('スタート！', W / 2, H / 2, H * 0.12, '#fff', 'center', INK);
         if (api.st === 'final' && api.final) D.result(W, H, api.final.title, api.final.rows, '1P の スマホで「もういちど」（Enter でも OK）', Math.min(1, api.t / 0.3));
       }
+      home.hidden = !(api.st === 'lobby' || api.st === 'final');
+      if (toast) { toast.t += dt; const a = Math.min(1, 2 - toast.t * 1.3); if (a <= 0) toast = null; else { cx.globalAlpha = a; D.text(toast.txt, W - 16, H - 30, H * 0.032, toast.c, 'right', INK); cx.globalAlpha = 1; } }
       D.soundHint(W, H);
     });
     return api;
@@ -450,18 +465,19 @@ const PAD = (() => {
 
   /* ---------- スマホ: ゲームの ながれ ----------
      HTML に #msg #sub #ready #hostbox（#start #back）が あれば ここで うごかす */
-  function phone({ id, onState, onData, onReady, msgs = {} }) {
+  function phone({ id, onState, onData, onReady, onCalib, msgs = {} }) {
     document.body.classList.add('pad');
     const $ = i => document.getElementById(i);
     const P = { st: {}, ready: false };
     const net = join({ id, onWelcome: () => render(), onData: d => {
       if (d.t === 'state') { P.st = d; render(); onState && onState(d); }
-      else if (d.t === 'calib') sensors.calibrate();
+      else if (d.t === 'calib') { sensors.calibrate(); onCalib && onCalib(); }
       else onData && onData(d);
     } });
     function render() {
       const st = P.st, s = st.st || 'lobby';
       if ($('ready')) $('ready').hidden = P.ready;
+      gy.hidden = !P.ready;
       if ($('hostbox')) $('hostbox').hidden = !(P.ready && st.host && (s === 'lobby' || s === 'final'));
       if ($('start')) $('start').textContent = s === 'final' ? 'もういちど' : 'スタート';
       if ($('back')) $('back').hidden = s !== 'final';
@@ -477,6 +493,9 @@ const PAD = (() => {
       sfx.unlock(); sfx.tap(); await sensors.request(); sensors.calibrate(); net.keepAwake();
       P.ready = true; net.send({ t: 'ready' }); render(); onReady && onReady();
     };
+    // ジャイロ リセット（どの ゲームにも ある。いまの むきを「まっすぐ」に しなおす）
+    const gy = document.createElement('button'); gy.id = 'gyro'; gy.textContent = 'ジャイロ リセット'; gy.hidden = true; document.body.appendChild(gy);
+    gy.onclick = () => { sensors.calibrate(); onCalib && onCalib(); sfx.tap(); if (navigator.vibrate) navigator.vibrate(40); net.send({ t: 'recal' }); gy.textContent = 'リセット！'; setTimeout(() => { gy.textContent = 'ジャイロ リセット'; }, 900); };
     if ($('start')) $('start').onclick = () => { sfx.tap(); net.send({ t: 'start' }); };
     if ($('back')) $('back').onclick = () => { sfx.tap(); net.send({ t: 'lobby' }); };
     return Object.assign(P, { net, send: o => net.send(o), render, me: net.me });
@@ -490,11 +509,11 @@ const PAD = (() => {
 'use strict';
 const GAME_ID = 'pour';
 const START_ANG = 70, STOP_ANG = 45;   // この かくど いじょうで そそぎ はじめ、これより もどすと とまる
-// shape: cup（ふつう）/ tall（ほそながい）/ wide（ひろい）。rate は 1びょうで ふえる パーセント
+// r0/r1/h: グラスの そこ・ふちの はんけいと たかさ。rate は 1びょうで ふえる パーセント。cap: ここを こえると こぼれる（100 = ふち。そのうえは ひょうめんちょうりょくで もりあがる）
 const ROUNDS = [
-  { name: 'オレンジジュース', color: '#f7a32b', shape: 'cup', rate: 24, foam: 0 },
-  { name: 'ぶどうジュース', color: '#8e4fc4', shape: 'tall', rate: 36, foam: 0 },
-  { name: 'ソーダ', color: '#6fb3e8', shape: 'wide', rate: 28, foam: 1 },
+  { name: 'オレンジジュース', color: '#f7a32b', r0: 0.55, r1: 0.7, h: 1.6, rate: 24, foam: 0, cap: 105 },
+  { name: 'ぶどうジュース', color: '#8e4fc4', r0: 0.38, r1: 0.45, h: 2.3, rate: 36, foam: 0, cap: 104 },
+  { name: 'ソーダ', color: '#6fb3e8', r0: 0.75, r1: 1.0, h: 1.1, rate: 28, foam: 1, cap: 107 },
 ];
 if (PAD.isPad) startPad(); else startMonitor();
 
@@ -524,13 +543,13 @@ function startPad() {
 function startMonitor() {
   let G = {}; const ang = {};
   const api = PAD.game({
-    id: GAME_ID, title: 'こぼれる ギリギリ', sub: 'いちどだけ そそいで、コップの ふちギリギリで とめろ！（1〜4にん）', keyboard: true, countMsg: 'スマホを たてに もってね',
+    id: GAME_ID, title: 'こぼれる ギリギリ', sub: 'いちどだけ そそいで、ふちから もりあがる ギリギリで とめろ！（1〜4にん）', keyboard: true, countMsg: 'スマホを たてに もってね',
     init(members) { G = { round: 0, phase: 'pour', pt: 0, total: {}, pl: {} }; for (const p of members) { G.total[p.pid] = 0; ang[p.pid] = 0; } startRound(); },
     onData(p, d) { if (d.t === 'ang') ang[p.pid] = +d.a || 0; else if (d.t === 'stop') stop(p.pid); },
     stateFor(p) {
       const s = G.pl && G.pl[p.pid]; if (!s) return {};
       if (api.st === 'final') { const r = ranking().find(r => r.pid === p.pid); return { msg: r ? (r.place === 1 ? 'ゆうしょう！' : r.place + 'い') + ' ' + r.pts + 'てん' : '' }; }
-      if (G.phase === 'show') return { msg: s.over ? 'こぼれた… 0てん' : s.score + 'てん！', sub: 'つぎを まってね', pouring: false };
+      if (G.phase === 'show') return { msg: s.over ? 'こぼれた… 0てん' : s.score + 'てん！', sub: s.bonus ? 'ひょうめんちょうりょく ボーナス +' + s.bonus : 'つぎを まってね', pouring: false };
       if (s.state === 'wait') return { msg: 'かたむけて そそげ！', sub: 'いちど はじめたら いきおいは かえられないよ', pouring: false };
       if (s.state === 'pour') return { msg: 'そそいでる…！', sub: 'もどすか「とめる！」で ストップ', pouring: true };
       return { msg: s.over ? 'こぼれた…' : 'ストップ！', sub: 'ほかの ひとを まってね', pouring: false };
@@ -546,24 +565,27 @@ function startMonitor() {
           let rate = 0;
           if (s.state === 'pour') rate = R.rate;
           else if (s.state === 'tail') { s.tail -= dt; rate = R.rate * Math.max(0, s.tail / 0.35); if (s.tail <= 0) { s.state = 'done'; api.push(); } }
-          s.flow = rate;
+          s.flow = s.over ? 0 : rate;
           if (rate > 0) { s.amt += rate * dt; if (R.foam) s.foam = Math.min(30, s.foam + rate * dt * 0.55); s.sndT -= dt; if (s.sndT <= 0) { s.sndT = 0.08; PAD.sfx.noise({ dur: 0.12, f0: 500 + s.amt * 12, f1: 400 + s.amt * 12, q: 3, vol: 0.08 }); } }
           else if (R.foam && s.foam > 0) s.foam = Math.max(0, s.foam - dt * 6);   // あわが しぼむ
-          if (!s.over && s.amt + s.foam > 100) { s.over = true; s.state = 'done'; PAD.sfx.bad(); PAD.sfx.noise({ dur: 0.5, f0: 900, f1: 300, vol: 0.3 }); api.room.send(p.pid, { t: 'vibe', ms: 300 }); api.push(); }
+          // ひょうめんちょうりょく: ふちを こえても すこしだけ もりあがって もつ。R.cap を こえたら こぼれる
+          if (!s.over && s.amt + s.foam > R.cap) { s.over = true; s.overT = 0; s.state = 'done'; s.flow = 0; PAD.sfx.bad(); PAD.sfx.noise({ dur: 0.5, f0: 900, f1: 300, vol: 0.3 }); api.room.send(p.pid, { t: 'vibe', ms: 300 }); api.push(); }
+          if (s.over) s.overT += dt;
+          if (!s.over && s.amt > 100 && !s.domeSnd) { s.domeSnd = true; PAD.sfx.tone({ f0: 1400, f1: 1800, dur: 0.12, vol: 0.08, type: 'sine' }); }
         }
         if (G.pt > 30) for (const p of api.members) { const s = G.pl[p.pid]; if (s.state === 'wait' || s.state === 'pour') stop(p.pid); }
         if (api.members.every(p => G.pl[p.pid].state === 'done' || !api.alive(p)) && api.members.every(p => G.pl[p.pid].foam < 1 || G.pl[p.pid].over)) {
           G.phase = 'show'; G.pt = 0;
-          for (const p of api.members) { const s = G.pl[p.pid]; s.score = s.over ? 0 : Math.round(Math.min(100, s.amt)); G.total[p.pid] += s.score; }
-          const best = Math.max(...api.members.map(p => G.pl[p.pid].score)); best >= 95 ? PAD.sfx.fanfare() : PAD.sfx.good(); api.push();
+          for (const p of api.members) { const s = G.pl[p.pid]; s.bonus = !s.over && s.amt > 100 ? Math.round((s.amt - 100) / (R.cap - 100) * 20) : 0; s.score = s.over ? 0 : Math.round(Math.min(100, s.amt)) + s.bonus; G.total[p.pid] += s.score; }
+          const best = Math.max(...api.members.map(p => G.pl[p.pid].score)); best >= 100 ? PAD.sfx.fanfare() : PAD.sfx.good(); api.push();
         }
-      } else if (G.phase === 'show' && G.pt > 3.5) {
+      } else if (G.phase === 'show' && G.pt > 3.8) {
         G.round++; if (G.round >= ROUNDS.length) { const r = ranking(); api.finish(D.winTitle(r), r.map(r => ({ color: r.color, a: r.place + 'い  ' + r.name, b: r.pts + 'てん', hi: r.place === 1 }))); }
         else startRound();
       }
     },
     draw() { drawScene(); },
-    bg(W, H) { cx.fillStyle = '#f6e7cf'; cx.fillRect(0, 0, W, H); cx.fillStyle = '#c98c5a'; cx.fillRect(0, H * 0.8, W, H * 0.2); cx.fillStyle = '#b37848'; cx.fillRect(0, H * 0.8, W, H * 0.025); },
+    bg() { if (api.st === 'lobby') { sync3D(true); V.camera.position.set(Math.sin(api.t * 0.3) * 2, 3.2, 8); V.camera.lookAt(0, 1.6, 0); V.render(); } },
     onKey(e, down) { if (e.code === 'Space') kbAng = down ? 120 : 0; },
   });
   let kbAng = 0;
@@ -571,55 +593,102 @@ function startMonitor() {
   const ranking = () => D.rank(api.members.map(p => ({ pid: p.pid, name: p.name, color: p.color, pts: G.total[p.pid] || 0 })));
   function startRound() {
     G.phase = 'pour'; G.pt = 0;
-    for (const p of api.members) G.pl[p.pid] = { state: 'wait', amt: 0, foam: 0, flow: 0, ang: 0, tail: 0, sndT: 0, over: false, score: 0 };
+    for (const p of api.members) G.pl[p.pid] = { state: 'wait', amt: 0, foam: 0, flow: 0, ang: 0, tail: 0, sndT: 0, over: false, overT: 0, score: 0, bonus: 0 };
     api.room.broadcast({ t: 'calib' }); api.push();
   }
   function stop(pid) {
     const s = G.pl[pid]; if (!s || G.phase !== 'pour') return;
     if (s.state === 'pour') { s.state = 'tail'; s.tail = 0.35; PAD.sfx.tap(); api.push(); }
   }
-  // コップの かたち: u（0=そこ〜1=ふち）での はばの はんぶん
-  function glassShape(shape, gw, gh) {
-    if (shape === 'tall') return { w: gw * 0.62, h: gh * 1.25, half: u => gw * 0.62 * (0.42 + 0.08 * u) };
-    if (shape === 'wide') return { w: gw * 1.2, h: gh * 0.75, half: u => gw * 1.2 * (0.36 + 0.14 * u) };
-    return { w: gw, h: gh, half: u => gw * (0.4 + 0.1 * u) };
+
+  // ---------------- 3D: キッチンの テーブル ----------------
+  const V = PAD.gl({ bg: '#f3e2c4', shadow: true, fov: 38 }), T3 = THREE;
+  V.sun.position.set(3, 9, 7); V.sun.intensity = 0.75;
+  for (const l of V.scene.children) if (l.isAmbientLight) l.intensity = 0.4;
+  V.scene.add(new T3.HemisphereLight('#fff6e6', '#a0785a', 0.35));
+  const std = (c, o = {}) => new T3.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.6 }, o));
+  { const wall = new T3.Mesh(new T3.PlaneGeometry(40, 16), std('#f6e3c0')); wall.position.set(0, 6, -4); V.scene.add(wall);
+    const tile = new T3.Mesh(new T3.PlaneGeometry(40, 2.2), std('#d9ecef')); tile.position.set(0, 1.1, -3.98); V.scene.add(tile);
+    for (let x = -20; x < 20; x += 0.8) { const l = new T3.Mesh(new T3.PlaneGeometry(0.03, 2.2), std('#b9d2d6')); l.position.set(x, 1.1, -3.97); V.scene.add(l); }
+    const top = new T3.Mesh(new T3.BoxGeometry(40, 0.3, 6), std('#c98c5a')); top.position.set(0, -0.15, -0.5); top.receiveShadow = true; V.scene.add(top);
+    const front = new T3.Mesh(new T3.BoxGeometry(40, 3, 0.2), std('#a8703f')); front.position.set(0, -1.6, 2.5); V.scene.add(front);
+    for (let i = -3; i <= 3; i++) { const sh = new T3.Mesh(new T3.BoxGeometry(2.2, 0.12, 0.6), std('#b07a4a')); sh.position.set(i * 3.4, 3.6, -3.7); V.scene.add(sh);
+      const jar = new T3.Mesh(new T3.CylinderGeometry(0.3, 0.3, 0.6, 16), std(['#e5484d', '#30a46c', '#f5c518', '#3d6bd6'][(i + 3) % 4], { roughness: 0.4 })); jar.position.set(i * 3.4 - 0.5, 3.96, -3.6); V.scene.add(jar); } }
+  const glassMat = new T3.MeshStandardMaterial({ color: '#dff4ff', transparent: true, opacity: 0.28, roughness: 0.1, metalness: 0.1, side: T3.DoubleSide, depthWrite: false });
+  const rimMat = std('#ffffff', { transparent: true, opacity: 0.7, roughness: 0.1 });
+  const C3 = {}; let built = -1;
+  function glassDims(R) { return { r0: R.r0, r1: R.r1, h: R.h }; }
+  function makeSet(R, color) {
+    const g = new T3.Group(), d = glassDims(R);
+    const glass = new T3.Mesh(new T3.LatheGeometry([new T3.Vector2(0, 0), new T3.Vector2(d.r0, 0), new T3.Vector2(d.r1, d.h)], 40), glassMat); glass.renderOrder = 2; g.add(glass);
+    const rim = new T3.Mesh(new T3.TorusGeometry(d.r1, 0.025, 8, 40), rimMat); rim.rotation.x = Math.PI / 2; rim.position.y = d.h; g.add(rim);
+    const bottom = new T3.Mesh(new T3.CylinderGeometry(d.r0, d.r0, 0.08, 40), rimMat); bottom.position.y = 0.04; g.add(bottom);
+    const lmat = std(R.color, { roughness: 0.25, transparent: true, opacity: 0.92 });
+    const liquid = new T3.Mesh(new T3.CylinderGeometry(1, 1, 1, 40), lmat); liquid.renderOrder = 1; g.add(liquid);
+    const dome = new T3.Mesh(new T3.SphereGeometry(1, 40, 12, 0, Math.PI * 2, 0, Math.PI / 2), lmat); dome.renderOrder = 1; g.add(dome);
+    const foam = new T3.Mesh(new T3.CylinderGeometry(1, 1, 1, 40), std('#ffffff', { roughness: 0.9 })); g.add(foam);
+    const spill = new T3.Mesh(new T3.CylinderGeometry(d.r1 + 0.03, d.r0 + 0.03, d.h, 40, 1, true), std(R.color, { transparent: true, opacity: 0.55, side: T3.DoubleSide, depthWrite: false })); spill.position.y = d.h / 2; g.add(spill);
+    const puddle = new T3.Mesh(new T3.CircleGeometry(1, 40), std(R.color, { roughness: 0.2 })); puddle.rotation.x = -Math.PI / 2; puddle.position.y = 0.01; g.add(puddle);
+    // ボトル（くちが じく）
+    const bottle = new T3.Group(); g.add(bottle);
+    const body = new T3.Mesh(new T3.CylinderGeometry(0.32, 0.32, 1.3, 24), std(R.color, { transparent: true, opacity: 0.85, roughness: 0.2 })); body.position.y = 1.15; body.castShadow = true; bottle.add(body);
+    const sh = new T3.Mesh(new T3.CylinderGeometry(0.32, 0.12, 0.35, 24), body.material); sh.position.y = 0.32; bottle.add(sh);
+    const neck = new T3.Mesh(new T3.CylinderGeometry(0.11, 0.12, 0.25, 16), std('#ffffff', { transparent: true, opacity: 0.7 })); neck.position.y = 0.05; bottle.add(neck);
+    const label = new T3.Mesh(new T3.CylinderGeometry(0.33, 0.33, 0.5, 24, 1, true), std(color)); label.position.y = 1.1; bottle.add(label);
+    const stream = new T3.Mesh(new T3.CylinderGeometry(1, 1, 1, 12), lmat); g.add(stream);
+    return { g, d, liquid, dome, foam, spill, puddle, bottle, stream };
+  }
+  function build(R, list) {
+    for (const k in C3) { V.scene.remove(C3[k].g); delete C3[k]; }
+    const n = list.length, gap = Math.max(2.6, R.r1 * 2 + 1.7);
+    list.forEach((p, i) => { const s = makeSet(R, p.color); s.g.position.x = (i - (n - 1) / 2) * gap; V.scene.add(s.g); C3[p.pid] = s; });
+    built = G.round;
+  }
+  const lobbyList = [{ pid: 'a', color: '#e5484d' }, { pid: 'b', color: '#3d6bd6' }];
+  function sync3D(lobby) {
+    const R = ROUNDS[lobby ? 0 : Math.min(G.round, ROUNDS.length - 1)], list = lobby ? lobbyList : api.members, t = performance.now() / 1000;
+    const key = lobby ? -2 : G.round * 10 + list.length;
+    if (built !== key) { build(R, list); built = key; }
+    for (const p of list) {
+      const c = C3[p.pid]; if (!c) continue; const d = c.d;
+      const s = lobby ? { amt: 60 + Math.sin(t) * 30, foam: 0, flow: 20, ang: 110, state: 'pour', over: false, overT: 0 } : G.pl[p.pid]; if (!s) continue;
+      const lv = Math.min(100, s.amt) / 100, h = Math.max(0.001, (d.h - 0.06) * lv), rt = d.r0 + (d.r1 - d.r0) * lv;
+      c.liquid.visible = s.amt > 0.2; c.liquid.scale.set(1, h, 1); c.liquid.position.y = h / 2 + 0.06;
+      c.liquid.geometry.dispose(); c.liquid.geometry = new T3.CylinderGeometry(rt - 0.02, d.r0 - 0.02, 1, 40);
+      // ふちより うえに もりあがる（ひょうめんちょうりょく）。げんかいに ちかいと ぷるぷる
+      const over = Math.max(0, Math.min(1, (s.amt - 100) / (R.cap - 100)));
+      c.dome.visible = !s.over && s.amt > 100; const wob = over > 0.6 ? Math.sin(t * 30) * 0.02 * over : 0;
+      c.dome.scale.set(d.r1 * (1 + wob), 0.02 + over * 0.2, d.r1 * (1 + wob)); c.dome.position.y = d.h;
+      const fh = s.foam / 100 * (d.h - 0.06); c.foam.visible = s.foam > 0.5; c.foam.scale.set(1, Math.max(0.001, fh), 1); c.foam.position.y = h + 0.06 + fh / 2;
+      c.foam.geometry.dispose(); const ft = d.r0 + (d.r1 - d.r0) * Math.min(1, lv + s.foam / 100); c.foam.geometry = new T3.CylinderGeometry(Math.min(d.r1, ft) - 0.02, rt - 0.02, 1, 40);
+      c.spill.visible = s.over; c.puddle.visible = s.over; if (s.over) { const u = Math.min(1, s.overT / 0.6); c.puddle.scale.setScalar(d.r1 * (1 + u * 1.2)); c.spill.material.opacity = 0.55 * (1 - Math.max(0, s.overT - 1.5) / 2); }
+      // ボトル: くちを グラスの ちょっと うえ・よこに
+      const pour = s.state === 'pour' || s.state === 'tail', a = pour ? Math.max(100, Math.min(160, s.ang)) : Math.max(55, Math.min(START_ANG - 5, s.ang));
+      c.bottle.position.set(-d.r1 * 0.25, d.h + 0.9, 0); c.bottle.rotation.z += ((-a * Math.PI / 180 + Math.PI) - c.bottle.rotation.z) * 0.25;
+      // ながれ
+      const top = h + 0.06 + (s.amt > 100 ? 0.05 : 0); c.stream.visible = s.flow > 0;
+      if (s.flow > 0) { const w = 0.03 + s.flow * 0.0018, len = d.h + 0.9 - top; c.stream.scale.set(w, len, w); c.stream.position.set(-d.r1 * 0.25, top + len / 2, 0); }
+    }
   }
   function drawScene() {
-    const W = S.W, H = S.H, n = api.members.length, cw = W / n, R = ROUNDS[Math.min(G.round, ROUNDS.length - 1)];
+    const W = S.W, H = S.H, n = api.members.length, R = ROUNDS[Math.min(G.round, ROUNDS.length - 1)];
+    sync3D(false);
+    const gap = Math.max(2.6, R.r1 * 2 + 1.7), span = (n - 1) * gap + R.r1 * 2 + 1.5, dist = Math.max(6.4, span * 1.15, R.h * 3.2);
+    V.camera.position.set(0, R.h * 0.9 + dist * 0.2, dist); V.camera.lookAt(0, R.h * 0.75, 0); V.render();
+    cx.clearRect(0, 0, W, H);
     D.text((Math.min(G.round, ROUNDS.length - 1) + 1) + 'かいめ：' + R.name, W / 2, H * 0.06, H * 0.055, '#fff', 'center', INK);
-    D.text('ふちギリギリで とめろ！ こぼれたら 0てん', W / 2, H * 0.125, H * 0.032, '#7a6a60');
+    D.text('ふちから すこし もりあがるまで だいじょうぶ（ひょうめんちょうりょく）。こぼれたら 0てん', W / 2, H * 0.125, H * 0.03, '#7a6a60');
     api.members.forEach((p, i) => {
-      const s = G.pl[p.pid]; if (!s) return;
-      const base = Math.min(cw * 0.42, H * 0.24), g = glassShape(R.shape, base, base * 1.4), gb = H * 0.8, gt = gb - g.h;
-      const path = () => { cx.beginPath(); cx.moveTo(gx - g.half(1), gt); cx.lineTo(gx - g.half(0), gb); cx.lineTo(gx + g.half(0), gb); cx.lineTo(gx + g.half(1), gt); };
-      const gx = cw * (i + 0.5);
-      cx.save(); path(); cx.closePath(); cx.fillStyle = 'rgba(255,255,255,0.6)'; cx.fill(); cx.clip();
-      const lv = gb - g.h * Math.min(100, s.amt) / 100, top = gb - g.h * Math.min(100, s.amt + s.foam) / 100;
-      cx.fillStyle = R.color; cx.fillRect(gx - g.w, lv, g.w * 2, gb - lv + 1);
-      if (s.foam > 0) { cx.fillStyle = '#ffffff'; cx.fillRect(gx - g.w, top, g.w * 2, lv - top); cx.fillStyle = '#e6f3fb'; for (let k = 0; k < 8; k++) { cx.beginPath(); cx.arc(gx - g.w * 0.5 + k * g.w * 0.14, top + 2, 6, 0, Math.PI * 2); cx.fill(); } }
-      cx.restore();
-      // ふちの ギリギリ ゾーン（95〜100%）
-      cx.fillStyle = 'rgba(229,72,77,.25)'; cx.fillRect(gx - g.half(1) - 8, gt, g.half(1) * 2 + 16, g.h * 0.05);
-      cx.lineWidth = 5; cx.strokeStyle = INK; path(); cx.stroke();
-      if (s.over) { cx.fillStyle = R.color; cx.beginPath(); cx.ellipse(gx, gb + 6, g.half(1) * 1.8, 10, 0, 0, Math.PI * 2); cx.fill(); cx.fillRect(gx + g.half(1) - 3, gt, 8, g.h); cx.fillRect(gx - g.half(1) - 5, gt, 8, g.h); }
-      // ボトル（くちを じくに まわす）
-      const a = s.state === 'pour' || s.state === 'tail' ? Math.max(100, s.ang) : Math.min(START_ANG - 5, s.ang), bw = base * 0.42, bh = bw * 2.2;
-      const px = gx - g.half(1) * 0.15, py = gt - bh * 1.15 - H * 0.02;
-      if (s.flow > 0) { cx.fillStyle = R.color; cx.globalAlpha = 0.9; const sw = 4 + s.flow * 0.3; cx.fillRect(px - sw / 2, py, sw, top - py); cx.globalAlpha = 1; }
-      cx.save(); cx.translate(px, py); cx.rotate(-Math.min(175, a) * Math.PI / 180);
-      cx.fillStyle = R.color; cx.strokeStyle = INK; cx.lineWidth = 4;
-      cx.beginPath(); cx.roundRect(-bw / 2, bh * 0.25, bw, bh, 10); cx.fill(); cx.stroke();
-      cx.fillStyle = '#fff'; cx.beginPath(); cx.roundRect(-bw * 0.2, 0, bw * 0.4, bh * 0.3, 4); cx.fill(); cx.stroke();
-      cx.fillStyle = 'rgba(255,255,255,.8)'; cx.beginPath(); cx.roundRect(-bw * 0.35, bh * 0.55, bw * 0.7, bh * 0.35, 6); cx.fill();
-      cx.restore();
-      D.panel(gx - cw * 0.4, H * 0.84, cw * 0.8, H * 0.12, p.color);
+      const s = G.pl[p.pid], c = C3[p.pid]; if (!s || !c) return;
+      const gx = c.g.position.x, [sx, sy] = V.toScreen(gx, -0.1, 1.2), [, my] = V.toScreen(gx, R.h * 0.45, 0), pw = Math.min(W / n * 0.8, H * 0.4);
+      D.panel(sx - pw / 2, H * 0.84, pw, H * 0.11, p.color);
       const tc = p.color === '#f5c518' ? INK : '#fff';
-      D.text(p.name + '  ' + (G.total[p.pid] || 0) + 'てん', gx, H * 0.9, H * 0.045, tc);
-      const mid = gt + g.h * 0.4;
-      if (s.over) D.text('こぼれた！', gx, mid, H * 0.06, '#fff', 'center', INK);
-      else if (G.phase === 'show') { D.text(s.score + 'てん', gx, mid, H * 0.08, s.score >= 95 ? '#ffd23f' : '#fff', 'center', INK); if (s.score >= 95) D.text('ギリギリ！', gx, mid + H * 0.08, H * 0.045, '#fff', 'center', INK); }
-      else if (s.state === 'wait') D.text('かたむけて！', gx, mid, H * 0.035, '#7a6a60');
-      else if (s.state === 'done') D.text('ストップ', gx, mid, H * 0.04, '#fff', 'center', INK);
+      D.text(p.name + '  ' + (G.total[p.pid] || 0) + 'てん', sx, H * 0.895, H * 0.042, tc);
+      if (s.over) D.text('こぼれた！', sx, my, H * 0.06, '#fff', 'center', INK);
+      else if (G.phase === 'show') { D.text(s.score + 'てん', sx, my, H * 0.08, s.score >= 100 ? '#ffd23f' : '#fff', 'center', INK); if (s.bonus) D.text('もりあがり +' + s.bonus, sx, my + H * 0.075, H * 0.04, '#fff', 'center', INK); }
+      else if (s.state === 'wait') D.text('かたむけて！', sx, my, H * 0.04, '#fff', 'center', INK);
+      else if (s.state === 'done') D.text('ストップ', sx, my, H * 0.045, '#fff', 'center', INK);
+      else if (s.amt > 100) D.text('もりあがってる…！', sx, my, H * 0.04, '#ffd23f', 'center', INK);
     });
   }
   window.__game = api; window.__end = () => { G.round = ROUNDS.length - 1; G.phase = 'show'; G.pt = 9; };

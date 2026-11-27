@@ -67,6 +67,7 @@ button.big:disabled{background:#b9b1a8}
       </div>
       <button class="big" id="go">はじめる</button>
       <button class="big" id="shakebtn">ここを おしても ふれるよ</button>
+      <p style="text-align:center"><button id="gyro" style="font:inherit;font-size:15px;font-weight:bold;color:#fff;background:#5b6b7a;border:3px solid #3a2328;border-radius:99px;padding:8px 16px;box-shadow:0 3px 0 #3a2328">ジャイロ リセット</button></p>
       <div class="card">
         <h2>あそびかた</h2>
         <ol class="how">
@@ -153,7 +154,7 @@ function startPad() {
   document.getElementById('cv').remove();
   const $ = id => document.getElementById(id);
   let conn = null, state = 'ready', motionOk = false, lastShake = 0, peak = 0, inPeak = 0;
-  const grav = [0, 0, 9.8];
+  const grav = [0, 0, 9.8]; let lastG = null;
   function send(o) { if (conn && conn.open) try { conn.send(o); } catch (e) {} }
 
   function connect() {
@@ -193,7 +194,7 @@ function startPad() {
   function onMotion(e) {
     let x, y, z; const a = e.acceleration;
     if (a && a.x != null) { x = a.x; y = a.y; z = a.z; }
-    else { const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
+    else { const g = e.accelerationIncludingGravity; if (!g || g.x == null) return; lastG = [g.x, g.y, g.z];
       grav[0] += (g.x - grav[0]) * 0.1; grav[1] += (g.y - grav[1]) * 0.1; grav[2] += (g.z - grav[2]) * 0.1;
       x = g.x - grav[0]; y = g.y - grav[1]; z = g.z - grav[2]; }
     motionOk = true;
@@ -218,6 +219,8 @@ function startPad() {
     try { if (navigator.wakeLock && !lock) lock = await navigator.wakeLock.request('screen'); } catch (e) {}
     send({ t: 'start' });
   };
+  // ジャイロ リセット: いまの もちかたを「とまっている」に しなおす（ふった つよさの きじゅん）
+  $('gyro').onclick = () => { if (lastG) { grav[0] = lastG[0]; grav[1] = lastG[1]; grav[2] = lastG[2]; } inPeak = 0; SFX.tap(); if (navigator.vibrate) navigator.vibrate(40); $('gyro').textContent = 'リセット！'; setTimeout(() => { $('gyro').textContent = 'ジャイロ リセット'; }, 900); };
   $('shakebtn').addEventListener('pointerdown', e => { e.preventDefault(); SFX.unlock(); shake(22); });
   document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'visible' && lock) try { lock = await navigator.wakeLock.request('screen'); } catch (e) {} });
   connect();
