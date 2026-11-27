@@ -3,15 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>クッキング ラッシュ</title>
+<title>チャーハン づくり</title>
 <!--
-  クッキング ラッシュ（1〜4にん）
-  ・りょうりの おだいが つぎつぎ でる。スマホを うごかして じかんないに クリア
-  ・フライパンを ふる（ふる）／ほうちょうで きざむ（たてに なんども ふる）／きじを こねる（ぐるぐる まわす）／ひっくりかえす（スマホを うらがえして もどす）
-  ・8もん。だんだん みじかく なる。クリアした かずで しょうぶ
+  チャーハン づくり（りょうり アクション・3D・1〜4にん）
+  ・ひとり 1さら、チャーハンを さいごまで つくって できばえを くらべる
+  ・① きざむ: スマホを かたむけると ほうちょうが うごく（よこ・まえうしろ）。スマホの むきで ほうちょうの むきも かわる。トン！と ふって きる
+  ・② いためる: スマホの かたむきで フライパンが かたむく。ふると あおる。つよすぎると ぐざいが とびだす。あおらないと こげる
+  ・③ もりつけ: スマホを うらがえすと おさらに もる
+  ・モニターは 3D（three.js）
 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 /* PAD きょうつう: モニターは キャンバス 1まい、スマホは #pad の なか */
 :root{--ink:#3a2328;--paper:#fffaf0;--ok:#2f9e5b;--blue:#4a9fe0;--me:#3a2328;--head:#3a2328}
@@ -44,33 +47,41 @@ button.sub:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
 .small{font-size:14px;color:#7a6a60;text-align:center;line-height:1.5}
 #conn{text-align:center;padding:40px 16px;font-size:20px;line-height:1.6}
 [hidden]{display:none!important}
+canvas#gl{display:block;position:fixed;inset:0;width:100%;height:100%}
+body.pad #gl{display:none}
 
 :root{--head:#c0582c}
-.meter{height:26px;border:3px solid var(--ink);border-radius:99px;background:#fff;overflow:hidden;margin:8px 0}
-.meter i{display:block;height:100%;width:0;background:var(--me);transition:width .1s}
-#tap{background:#f5a623;font-size:24px}
-#task{font-size:30px;font-weight:bold;text-align:center;margin:6px 0}
+#task{font-size:28px;font-weight:bold;text-align:center;margin:6px 0}
+#fb{display:none}
+#fb .row{display:flex;gap:10px}
+#fb button{flex:1}
+#kpos{width:100%;margin:8px 0}
 </style>
 </head>
 <body>
+<canvas id="gl"></canvas>
 <canvas id="cv"></canvas>
 <div id="pad">
-  <header><h1>クッキング</h1><span id="badge">…</span></header>
+  <header><h1>チャーハン</h1><span id="badge">…</span></header>
   <main>
     <div id="conn">モニターに つないでいます…</div>
     <div id="app" hidden>
-      <div class="card"><div id="task" hidden></div><div class="msg" id="msg"></div><div class="small" id="sub"></div><div class="meter" id="mt" hidden><i id="mi"></i></div></div>
+      <div class="card"><div id="task" hidden></div><div class="msg" id="msg"></div><div class="small" id="sub"></div></div>
       <button class="big" id="ready">じゅんび OK！</button>
       <div id="hostbox" hidden><button class="big" id="start">スタート</button><button class="big" id="back" style="background:#7a6a60">ロビーへ</button></div>
-      <button class="big" id="tap" hidden>センサーが ない ときは れんだ！</button>
+      <div id="fb">
+        <div class="small">センサーが ない ときは ボタンで</div>
+        <input type="range" id="kpos" min="-100" max="100" value="0">
+        <div class="row"><button class="big" id="bShake">トン／ふる</button><button class="big" id="bFlip" style="background:#7a6a60">うらがえす</button></div>
+      </div>
       <div class="card">
-        <h2>おだいと うごかしかた</h2>
+        <h2>つくりかた</h2>
         <ol class="how">
-          <li>フライパンを ふれ！ … スマホを まえうしろに ふる</li>
-          <li>ほうちょうで きざめ！ … トントンと たてに なんども ふる</li>
-          <li>きじを こねろ！ … スマホを ぐるぐる まわす</li>
-          <li>ひっくりかえせ！ … スマホを うらがえして もどす</li>
-          <li>メーターが いっぱいに なったら クリア！</li>
+          <li>きざむ：スマホを たいらに もって かたむけると ほうちょうが うごく。ねぎの うえで トン！と ふって きる。ぜんぶ きろう</li>
+          <li>ほうちょうは まっすぐ むけてね（ななめだと きれいに きれない）</li>
+          <li>いためる：かたむけると フライパンも かたむく。ふると あおれる。あおらないと こげる！ でも つよすぎると とびだすよ</li>
+          <li>もりつけ：スマホを うらがえすと おさらに もれる。はやいほど ボーナス</li>
+          <li>できあがった チャーハンの てんすうで しょうぶ！</li>
         </ol>
       </div>
       <div class="note">スマホを しっかり にぎってね。まわりの ひとに ぶつからないように</div>
@@ -249,7 +260,10 @@ const PAD = (() => {
       g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
     }
-    addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
+    for (const ev of ['pointerdown', 'keydown', 'touchstart', 'mousedown', 'click']) addEventListener(ev, unlock, true);
+    // モニターは ひらいた とたんに おとを ためす。ブラウザが ゆるしていれば（じどうさいせい OK の せってい）そのまま なる。
+    // だめでも 1びょうごとに ためしつづける
+    if (!ROOM) { unlock(); const iv = setInterval(() => { unlock(); if (ok()) clearInterval(iv); }, 1000); }
     return {
       unlock, ok, noise, tone,
       join() { tone({ f0: 660, dur: 0.12 }); tone({ f0: 990, dur: 0.22, delay: 0.1 }); },
@@ -347,6 +361,34 @@ const PAD = (() => {
     let ready = false; addEventListener('resize', fit); fit(); ready = true; return { cx, S };
   }
   function loop(f) { let last = performance.now(); const tick = now => { const dt = Math.min(0.05, (now - last) / 1000); last = now; f(dt); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }  // さいしょも つぎの フレームから（ゲームの へんすうが できてから）
+
+  /* ---------- モニター: 3D（three.js）。#gl キャンバスに かく。2D の #cv は うえに かさねて もじ・パネル用 ----------
+     たいらな いろ（トゥーン）＋ こい ふちどり で、ほかの ゲームの えと そろえる */
+  function gl(opt = {}) {
+    const el = document.getElementById('gl');
+    const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true });
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+    if (opt.shadow) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(opt.bg || '#efe3cc');
+    const camera = new THREE.PerspectiveCamera(opt.fov || 45, 1, 0.1, 500);
+    const grad = new THREE.DataTexture(new Uint8Array([150, 150, 150, 255, 255, 255, 255, 255]), 2, 1, THREE.RGBAFormat);  // 2だんかいの かげ
+    grad.minFilter = grad.magFilter = THREE.NearestFilter; grad.needsUpdate = true;
+    const mats = {};
+    const toon = c => mats[c] || (mats[c] = new THREE.MeshToonMaterial({ color: c, gradientMap: grad }));
+    const inkMat = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
+    // ふちどり: うらがえしの すこし おおきい くろい かたち
+    function outline(mesh, w = 0.05) { const o = new THREE.Mesh(mesh.geometry, inkMat); o.scale.setScalar(1 + w); mesh.add(o); return mesh; }
+    function mesh(geo, color, { ink = 0.05, cast = true, recv = false } = {}) { const m = new THREE.Mesh(geo, toon(color)); m.castShadow = cast; m.receiveShadow = recv; if (ink) outline(m, ink); return m; }
+    scene.add(new THREE.AmbientLight(0xffffff, 0.48));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.62); sun.position.set(4, 10, 6); scene.add(sun); scene.add(sun.target);
+    if (opt.shadow) { sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); const c = sun.shadow.camera; c.left = c.bottom = -20; c.right = c.top = 20; c.near = 0.5; c.far = 60; }
+    function fit() { const W = innerWidth, H = innerHeight; renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix(); }
+    addEventListener('resize', fit); fit();
+    // 3D の いち → がめんの いち（2D の もじを かさねる ため）
+    const v = new THREE.Vector3();
+    function toScreen(x, y, z) { v.set(x, y, z).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight, v.z < 1]; }
+    return { THREE, renderer, scene, camera, sun, toon, outline, mesh, inkMat, toScreen, render: () => renderer.render(scene, camera) };
+  }
 
   /* ---------- モニター: ゲームの ながれ（ロビー → 3・2・1 → プレイ → けっか） ----------
      spec: { id, title, sub, min, max, bg, init(members), update(dt), draw(), onData(p, d), stateFor(p), onKey(e), resize(W, H) }
@@ -449,146 +491,249 @@ const PAD = (() => {
     return Object.assign(P, { net, send: o => net.send(o), render, me: net.me });
   }
 
-  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone };
+  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone, gl };
 })();
 
 </script>
 <script>
 'use strict';
-const GAME_ID = 'cook', N_TASK = 8;
-// kind: peak（ふった かず）/ rot（まわした どすう）/ flip（うらがえした かいすう）
-const TASKS = {
-  fry: { name: 'フライパンを ふれ！', kind: 'peak', need: 7, color: '#f5a623' },
-  chop: { name: 'ほうちょうで きざめ！', kind: 'peak', need: 12, color: '#5cc46a' },
-  knead: { name: 'きじを こねろ！', kind: 'rot', need: 1000, color: '#e8c58a' },
-  flip: { name: 'ひっくりかえせ！', kind: 'flip', need: 2, color: '#e5904d' },
-};
+const GAME_ID = 'cook';
+const PH = { chop: { name: 'ねぎを きざめ！', time: 20 }, fry: { name: 'いためろ！', time: 20 }, plate: { name: 'おさらに もれ！', time: 8 } };
+const NSEG = 10;
 if (PAD.isPad) startPad(); else startMonitor();
 
 function startPad() {
   const $ = id => document.getElementById(id), S = PAD.sensors;
-  let rot = 0, face = 0, lastMot = 0;
-  const P = PAD.phone({ id: GAME_ID, msgs: { count: 'つぎの おだいは…？' }, onState: d => {
-    const on = d.st === 'play' && d.task;
-    $('task').hidden = !on; $('mt').hidden = !on; $('tap').hidden = !on || performance.now() - lastMot < 1500;
-    if (on) { $('task').textContent = TASKS[d.task].name; $('mi').style.width = Math.min(100, d.prog * 100) + '%'; }
-  }, onData: d => { if (d.t === 'ok') { PAD.sfx.good(); if (navigator.vibrate) navigator.vibrate(100); } } });
-  S.onShake(p => P.send({ t: 'peak', p }), { th: 12, gap: 120 });
-  S.on('motion', e => {
-    lastMot = performance.now();
-    const r = e.rotationRate; if (r && r.alpha != null) rot += Math.hypot(r.alpha, r.beta, r.gamma) * (e.interval > 1 ? e.interval / 1000 : e.interval || 0.016);
-    const g = e.accelerationIncludingGravity; if (g && g.z != null) { const f = g.z > 6 ? 1 : g.z < -6 ? -1 : 0; if (f && f !== face) { if (face) P.send({ t: 'flip' }); face = f; } }
-  });
-  setInterval(() => { if (rot > 5) { P.send({ t: 'rot', d: Math.round(rot) }); rot = 0; } }, 100);
-  $('tap').addEventListener('pointerdown', e => { e.preventDefault(); P.send({ t: 'peak', p: 20 }); P.send({ t: 'rot', d: 110 }); P.send({ t: 'flip' }); });
+  let lastOri = 0, face = 0, phase = '';
+  const P = PAD.phone({ id: GAME_ID, msgs: { count: 'エプロン よし！' }, onState: d => {
+    phase = d.st === 'play' ? d.phase : '';
+    $('task').hidden = !phase || !PH[phase]; if (PH[phase]) $('task').textContent = PH[phase].name;
+    $('fb').style.display = phase && performance.now() - lastOri > 1500 ? 'block' : 'none';
+  }, onData: d => { if (d.t === 'ok' && navigator.vibrate) navigator.vibrate(40); } });
+  S.on('orient', () => { lastOri = performance.now(); });
+  S.onShake(p => P.send({ t: 'peak', p }), { th: 12, gap: 160 });
+  S.on('motion', e => { const g = e.accelerationIncludingGravity; if (g && g.z != null) { const f = g.z > 6 ? 1 : g.z < -6 ? -1 : 0; if (f && f !== face) { if (face) P.send({ t: 'flip' }); face = f; } } });
+  $('bShake').onclick = () => P.send({ t: 'peak', p: 22 });
+  $('bFlip').onclick = () => P.send({ t: 'flip' });
+  setInterval(() => {
+    if (!phase) return;
+    if (performance.now() - lastOri < 1000) { const t = S.tilt(25), r = S.rel(); P.send({ t: 'tilt', x: +t.x.toFixed(3), y: +t.y.toFixed(3), yaw: Math.round(r.alpha) }); }
+    else P.send({ t: 'tilt', x: $('kpos').value / 100, y: 0, yaw: 0 });
+  }, 50);
 }
 
 function startMonitor() {
-  let G = {};
+  let G = {}; const tilt = {};
   const api = PAD.game({
-    id: GAME_ID, title: 'クッキング ラッシュ', sub: 'つぎつぎ でる りょうりの おだいを スマホで クリア！（1〜4にん）', keyboard: true, countMsg: 'エプロン よし！',
+    id: GAME_ID, title: 'チャーハン づくり', sub: 'きざんで、いためて、もりつけ！ スマホが ほうちょうと フライパンに なる（1〜4にん）', keyboard: true, countMsg: 'エプロン よし！',
     init(members) {
-      const keys = Object.keys(TASKS), list = [];
-      for (let i = 0; i < N_TASK; i++) { let k; do { k = keys[Math.random() * keys.length | 0]; } while (list.length && list[list.length - 1] === k); list.push(k); }
-      G = { list, i: -1, phase: 'intro', pt: 0, score: {}, prog: {}, done: {}, anim: 0, pops: [] };
-      for (const p of members) G.score[p.pid] = 0;
-      nextTask();
+      G = { phase: 'chop', pt: 0, st: {}, pops: [], show: 0 };
+      for (const p of members) { tilt[p.pid] = { x: 0, y: 0, yaw: 0 }; G.st[p.pid] = { cut: new Array(NSEG).fill(0), chopAnim: 0, chopScore: 0, fryScore: 0, plateScore: 0, plated: false, plateT: 0, parts: [], toss: 0, sz: 0, done: false }; }
+      build3D();
     },
     onData(p, d) {
-      if (G.phase !== 'go' || G.done[p.pid]) return;
-      const T = TASKS[G.list[G.i]];
-      if (d.t === 'peak' && T.kind === 'peak') add(p.pid, 1);
-      else if (d.t === 'rot' && T.kind === 'rot') add(p.pid, Math.min(400, +d.d || 0));
-      else if (d.t === 'flip' && T.kind === 'flip') add(p.pid, 1);
+      const s = G.st[p.pid]; if (!s) return;
+      if (d.t === 'tilt') tilt[p.pid] = { x: +d.x || 0, y: +d.y || 0, yaw: +d.yaw || 0 };
+      else if (d.t === 'peak') { if (G.phase === 'chop') chop(p.pid); else if (G.phase === 'fry') toss(p.pid, +d.p || 15); }
+      else if (d.t === 'flip' && G.phase === 'plate') plate(p.pid);
     },
     stateFor(p) {
-      if (!G.list) return {};
-      if (api.st === 'final') { const r = ranking().find(r => r.pid === p.pid); return { msg: r ? (r.place === 1 ? 'ゆうしょう！' : r.place + 'い') + ' ' + r.pts + 'こ クリア' : '' }; }
-      const k = G.list[G.i], T = TASKS[k];
-      if (G.phase === 'intro') return { msg: 'つぎは…', sub: (G.i + 1) + ' / ' + N_TASK + 'もんめ', task: k, prog: 0 };
-      if (G.phase === 'go') return { msg: G.done[p.pid] ? 'クリア！' : 'がんばれ！', sub: 'のこり ' + Math.ceil(G.limit - G.pt) + 'びょう', task: k, prog: (G.prog[p.pid] || 0) / T.need };
-      return { msg: G.done[p.pid] ? 'クリア！' : 'ざんねん…', sub: 'つぎの おだいを まってね' };
+      const s = G.st && G.st[p.pid]; if (!s) return {};
+      if (api.st === 'final') { const r = ranking().find(r => r.pid === p.pid); return { msg: r ? (r.place === 1 ? 'ゆうしょう！' : r.place + 'い') + ' ' + r.pts + 'てん' : '' }; }
+      const left = Math.max(0, Math.ceil((PH[G.phase] ? PH[G.phase].time : 0) - G.pt));
+      if (G.phase === 'chop') return { phase: 'chop', msg: s.cut.filter(c => c).length + ' / ' + NSEG + ' きれた', sub: 'のこり ' + left + 'びょう' };
+      if (G.phase === 'fry') return { phase: 'fry', msg: 'あおって いためろ！', sub: 'のこり ' + left + 'びょう  とびだした ' + s.parts.filter(q => q.lost).length + 'こ' };
+      if (G.phase === 'plate') return { phase: 'plate', msg: s.plated ? 'もりつけ かんりょう！' : 'スマホを うらがえせ！', sub: 'のこり ' + left + 'びょう' };
+      return { phase: 'show', msg: 'できあがり！', sub: 'モニターを みてね' };
     },
     update(dt) {
-      G.pt += dt; G.anim += dt;
+      G.pt += dt;
       for (const q of G.pops) q.t += dt; G.pops = G.pops.filter(q => q.t < 1);
-      if (G.phase === 'intro' && G.pt > 1.4) { G.phase = 'go'; G.pt = 0; PAD.sfx.go(); api.push(); }
-      else if (G.phase === 'go') {
-        const left = G.limit - G.pt; if (left < 3 && Math.ceil(left) !== Math.ceil(left + dt)) PAD.sfx.tick();
-        if (left <= 0 || api.members.every(p => G.done[p.pid] || !api.alive(p))) { G.phase = 'judge'; G.pt = 0; const n = api.members.filter(p => G.done[p.pid]).length; n ? PAD.sfx.good() : PAD.sfx.bad(); api.push(); }
-      } else if (G.phase === 'judge' && G.pt > 1.6) nextTask();
+      const T = PH[G.phase];
+      if (T && G.pt > T.time - 3 && Math.ceil(T.time - G.pt) !== Math.ceil(T.time - G.pt + dt)) PAD.sfx.tick();
+      if (G.phase === 'chop') { for (const p of api.members) chopUpdate(p, dt); if (G.pt >= T.time || api.members.every(p => G.st[p.pid].cut.every(c => c) || !api.alive(p))) toFry(); }
+      else if (G.phase === 'fry') { for (const p of api.members) fryUpdate(p, dt); if (G.pt >= T.time) toPlate(); }
+      else if (G.phase === 'plate') { for (const p of api.members) plateUpdate(p, dt); if (G.pt >= T.time || api.members.every(p => G.st[p.pid].plated || !api.alive(p))) { for (const p of api.members) if (!G.st[p.pid].plated) plate(p.pid, true); G.phase = 'show'; G.pt = 0; PAD.sfx.fanfare(); api.push(); } }
+      else if (G.phase === 'show') { for (const p of api.members) plateUpdate(p, dt); if (G.pt > 5) { const r = ranking(); api.finish(D.winTitle(r), r.map(r => ({ color: r.color, a: r.place + 'い  ' + r.name, b: r.pts + 'てん', hi: r.place === 1 }))); } }
+      sizzle(dt);
     },
     draw() { drawScene(); },
-    bg(W, H) { cx.fillStyle = '#fbe9d2'; cx.fillRect(0, 0, W, H); cx.fillStyle = '#f3d6b3'; const t = H * 0.08; for (let y = 0; y < H * 0.62; y += t) for (let x = (y / t % 2) * t; x < W; x += t * 2) cx.fillRect(x, y, t, t); cx.fillStyle = '#9a6a45'; cx.fillRect(0, H * 0.62, W, H * 0.38); cx.fillStyle = '#b5825a'; cx.fillRect(0, H * 0.62, W, H * 0.03); },
-    onKey(e, down) { if (down && e.code === 'Space' && api.members[0].kb) { add(1, TASKS[G.list[G.i]].kind === 'rot' ? 130 : 1); } },
+    bg(W, H) { if (api.st === 'lobby') { V.camera.position.set(Math.sin(api.t * 0.3) * 3, 7, 8); V.camera.lookAt(0, 1, 0); V.render(); } },
+    onKey(e, down) { if (!down || !api.members[0].kb) return; if (e.code === 'Space') { if (G.phase === 'chop') chop(1); else if (G.phase === 'fry') toss(1, e.shiftKey ? 45 : 24); else if (G.phase === 'plate') plate(1); }
+      if (e.code === 'ArrowLeft') tilt[1].x = Math.max(-1, tilt[1].x - 0.2); if (e.code === 'ArrowRight') tilt[1].x = Math.min(1, tilt[1].x + 0.2); },
   });
   const cx = api.cx, D = api.D, S = api.S, INK = PAD.INK;
-  const ranking = () => D.rank(api.members.map(p => ({ pid: p.pid, name: p.name, color: p.color, pts: G.score[p.pid] || 0 })));
-  function nextTask() {
-    G.i++; if (G.i >= N_TASK) { const r = ranking(); api.finish(D.winTitle(r), r.map(r => ({ color: r.color, a: r.place + 'い  ' + r.name, b: r.pts + 'こ クリア', hi: r.place === 1 }))); return; }
-    G.phase = 'intro'; G.pt = 0; G.limit = 6 - G.i * 0.3; G.prog = {}; G.done = {}; PAD.sfx.tone({ f0: 880, dur: 0.1 }); PAD.sfx.tone({ f0: 1320, dur: 0.15, delay: 0.1 }); api.push();
+  const total = s => Math.round(s.chopScore + s.fryScore + s.plateScore);
+  const ranking = () => D.rank(api.members.map(p => ({ pid: p.pid, name: p.name, color: p.color, pts: total(G.st[p.pid]) })));
+
+  // ---------------- 3D ----------------
+  const V = PAD.gl({ bg: '#fbe9d2', shadow: true, fov: 42 }), T3 = THREE;
+  const world = new T3.Group(); V.scene.add(world);
+  // かべと カウンター（ロビーでも みえる）
+  const wall = V.mesh(new T3.PlaneGeometry(60, 20), '#f3d6b3', { ink: 0, cast: false, recv: true }); wall.position.set(0, 6, -4); V.scene.add(wall);
+  const counter = V.mesh(new T3.BoxGeometry(60, 1, 8), '#b5825a', { ink: 0, cast: false, recv: true }); counter.position.set(0, 0, 0); V.scene.add(counter);
+  const tiles = V.mesh(new T3.BoxGeometry(60, 0.02, 8), '#e8d2b0', { ink: 0, cast: false, recv: true }); tiles.position.set(0, 0.51, 0); V.scene.add(tiles);
+  const SX = i => (i - (api.members.length - 1) / 2) * 5.2;   // ステーションの X
+  const st3 = {};
+  function lathePan() { const pts = [[0, 0], [1.3, 0], [1.45, 0.08], [1.55, 0.38], [1.6, 0.4]].map(([x, y]) => new T3.Vector2(x, y)); return new T3.LatheGeometry(pts, 40); }
+  function build3D() {
+    while (world.children.length) world.remove(world.children[0]);
+    api.members.forEach((p, i) => {
+      const X = SX(i), o = st3[p.pid] = {};
+      const g = o.g = new T3.Group(); g.position.set(X, 0.5, 0); world.add(g);
+      // まないた・ねぎ・ほうちょう
+      o.board = V.mesh(new T3.BoxGeometry(4.6, 0.2, 2.2), '#e7b97c', { ink: 0.02, recv: true }); o.board.position.y = 0.1; g.add(o.board);
+      o.segs = [];
+      for (let k = 0; k < NSEG; k++) { const m = V.mesh(new T3.CylinderGeometry(0.17, 0.17, 0.38, 14), k < 3 ? '#e8f3d0' : '#5cb85c', { ink: 0.06 }); m.rotation.z = Math.PI / 2; m.position.set(-1.8 + k * 0.4, 0.38, 0); g.add(m); o.segs.push(m); }
+      o.knife = new T3.Group(); const blade = V.mesh(new T3.BoxGeometry(0.06, 0.55, 1.3), '#dfe6ee', { ink: 0.05 }); blade.position.set(0, 0.28, 0); o.knife.add(blade);
+      const handle = V.mesh(new T3.BoxGeometry(0.12, 0.16, 0.7), '#3a2a22', { ink: 0.06 }); handle.position.set(0, 0.48, 1.0); o.knife.add(handle); o.knife.position.y = 0.9; g.add(o.knife);
+      // コンロ・フライパン・おさら
+      o.stove = V.mesh(new T3.BoxGeometry(3.6, 0.3, 3.0), '#4a4a4a', { ink: 0.02, recv: true }); o.stove.position.set(0, 0.15, -0.2); o.stove.visible = false; g.add(o.stove);
+      o.panG = new T3.Group(); o.panG.position.set(0, 0.45, -0.2); o.panG.visible = false; g.add(o.panG);
+      const pan = new T3.Mesh(lathePan(), new T3.MeshToonMaterial({ color: '#3d3d3d', side: T3.DoubleSide, gradientMap: null })); pan.receiveShadow = true; o.panG.add(pan);
+      const ph = V.mesh(new T3.CylinderGeometry(0.1, 0.1, 1.6, 8), '#7a4a2a', { ink: 0.08 }); ph.rotation.x = Math.PI / 2; ph.position.set(0, 0.35, 2.2); o.panG.add(ph);
+      o.partsG = new T3.Group(); o.panG.add(o.partsG);
+      o.plate = V.mesh(new T3.CylinderGeometry(1.5, 1.2, 0.12, 36), '#ffffff', { ink: 0.03, recv: true }); o.plate.position.set(0, 0.06, 2.5); o.plate.visible = false; g.add(o.plate);
+      o.dome = new T3.Group(); o.dome.position.set(0, 0.12, 2.5); g.add(o.dome);
+      o.lostG = new T3.Group(); world.add(o.lostG);
+    });
+    frameCamera('chop');
   }
-  function add(pid, v) {
-    if (G.phase !== 'go' || G.done[pid]) return; const T = TASKS[G.list[G.i]];
-    G.prog[pid] = (G.prog[pid] || 0) + v; G.anim = 0;
-    if (T.kind !== 'rot' || Math.random() < 0.3) PAD.sfx.noise(T.kind === 'peak' && G.list[G.i] === 'chop' ? { dur: 0.05, f0: 2500, vol: 0.15 } : { dur: 0.1, f0: 700, f1: 400, vol: 0.12 });
-    if (G.prog[pid] >= T.need) { G.done[pid] = true; G.score[pid]++; api.room.send(pid, { t: 'ok' }); const p = api.members.find(m => m.pid === pid); G.pops.push({ t: 0, txt: p.name + ' クリア！', c: p.color }); PAD.sfx.tone({ f0: 1047, dur: 0.15, vol: 0.15 }); }
+  function frameCamera(ph) {
+    const n = api.members.length, w = n * 5.2, tanH = Math.tan(V.camera.fov * Math.PI / 360), asp = innerWidth / innerHeight;
+    const d = Math.max(w / (2 * tanH * asp), 4.5 / (2 * tanH)) * 1.05;
+    const z0 = ph === 'chop' ? 0 : ph === 'fry' ? -0.2 : 1.6;
+    V.camera.position.set(0, 0.5 + d * 0.82, z0 + d * 0.6); V.camera.lookAt(0, 0.6, z0 - 0.3);
+    V.sun.position.set(3, 12, 8);
+  }
+  // ---------------- ① きざむ ----------------
+  function chopUpdate(p, dt) {
+    const s = G.st[p.pid], o = st3[p.pid], t = p.kb ? tilt[1] : tilt[p.pid];
+    s.kx = Math.max(-2.1, Math.min(2.1, t.x * 2.3)); s.kz = Math.max(-1.0, Math.min(1.0, t.y * 1.2)); s.yaw = Math.max(-60, Math.min(60, -t.yaw));
+    s.chopAnim = Math.max(0, s.chopAnim - dt * 6);
+    o.knife.position.set(s.kx, 0.9 - (1 - Math.abs(1 - s.chopAnim * 2)) * 0.62 * (s.chopAnim > 0 ? 1 : 0), s.kz); o.knife.rotation.y = s.yaw * Math.PI / 180;
+    o.segs.forEach((m, k) => { if (s.cut[k]) { m.position.z += ((k % 2 ? 0.16 : -0.16) - m.position.z) * Math.min(1, dt * 8); m.rotation.y += (0.3 * (k % 2 ? 1 : -1) - m.rotation.y) * Math.min(1, dt * 8); } });
+  }
+  function chop(pid) {
+    const s = G.st[pid], o = st3[pid]; if (!s || s.chopAnim > 0) return;
+    s.chopAnim = 1; PAD.sfx.noise({ dur: 0.06, f0: 2500, vol: 0.2 }); PAD.sfx.tone({ f0: 220, dur: 0.05, vol: 0.12, type: 'square' });
+    if (Math.abs(s.kz) > 0.45) { pop(pid, 'まないたの そと', 0); return; }
+    const k = Math.round((s.kx + 1.8) / 0.4); if (k < 0 || k >= NSEG) { pop(pid, 'ねぎが ないよ', 0); return; }
+    if (s.cut[k]) { pop(pid, 'もう きれてる', 0); return; }
+    const straight = Math.abs(s.yaw) < 30; s.cut[k] = straight ? 1 : 0.5;
+    pop(pid, straight ? 'トン！' : 'ななめ…', straight ? 1 : 0); api.room.send(pid, { t: 'ok' }); api.push(false);
+  }
+  // ---------------- ② いためる ----------------
+  const PR = 1.3, RIM = 0.4;
+  function toFry() {
+    G.phase = 'fry'; G.pt = 0; frameCamera('fry'); PAD.sfx.go();
+    for (const p of api.members) {
+      const s = G.st[p.pid], o = st3[p.pid]; s.chopScore = s.cut.reduce((a, b) => a + b, 0) * 3;
+      o.board.visible = false; o.knife.visible = false; o.segs.forEach(m => m.visible = false); o.stove.visible = true; o.panG.visible = true;
+      // ぐざい: ごはん 18こ、きった ねぎ、たまご 6こ
+      const kinds = []; for (let i = 0; i < 18; i++) kinds.push(['rice', '#fff8e8', 0.11]); s.cut.forEach(c => { if (c) kinds.push(['negi', '#5cb85c', 0.1]); }); for (let i = 0; i < 6; i++) kinds.push(['egg', '#f7d35c', 0.12]);
+      s.parts = kinds.map(([kind, color, r]) => { const a = Math.random() * Math.PI * 2, rr = Math.random() * 0.9; const mat = new T3.MeshToonMaterial({ color }); const m = new T3.Mesh(kind === 'negi' ? new T3.CylinderGeometry(r, r, 0.1, 8) : new T3.SphereGeometry(r, 8, 6), mat); m.castShadow = true; o.partsG.add(m);
+        return { kind, base: new T3.Color(color), m, r, x: Math.cos(a) * rr, z: Math.sin(a) * rr, y: 0.05 + Math.random() * 0.3, vx: 0, vz: 0, vy: 0, cook: 0, bottom: 0, lost: false }; });
+    }
     api.push();
   }
-  // おだいの え（たいらな いろ ＋ ふち）
-  function art(k, x, y, s, t) {
-    cx.save(); cx.translate(x, y); cx.lineWidth = Math.max(3, s * 0.04); cx.strokeStyle = INK; cx.lineJoin = cx.lineCap = 'round';
-    const wob = Math.sin(t * 25) * Math.max(0, 1 - t * 4);
-    if (k === 'fry') {
-      cx.rotate(wob * 0.25); cx.fillStyle = '#555'; cx.beginPath(); cx.ellipse(0, 0, s * 0.55, s * 0.2, 0, 0, Math.PI * 2); cx.fill(); cx.stroke();
-      cx.fillStyle = '#7a4a2a'; cx.fillRect(s * 0.5, -s * 0.05, s * 0.5, s * 0.1); cx.strokeRect(s * 0.5, -s * 0.05, s * 0.5, s * 0.1);
-      const jump = Math.max(0, 1 - t * 3) * s * 0.4;
-      cx.fillStyle = '#e5484d'; cx.beginPath(); cx.arc(-s * 0.15, -s * 0.08 - jump, s * 0.1, 0, Math.PI * 2); cx.fill(); cx.stroke();
-      cx.fillStyle = '#5cc46a'; cx.beginPath(); cx.arc(s * 0.15, -s * 0.06 - jump * 0.7, s * 0.09, 0, Math.PI * 2); cx.fill(); cx.stroke();
-      cx.fillStyle = '#f5c518'; cx.beginPath(); cx.arc(0, -s * 0.1 - jump * 1.2, s * 0.08, 0, Math.PI * 2); cx.fill(); cx.stroke();
-    } else if (k === 'chop') {
-      cx.fillStyle = '#d9a46a'; cx.fillRect(-s * 0.6, s * 0.05, s * 1.2, s * 0.22); cx.strokeRect(-s * 0.6, s * 0.05, s * 1.2, s * 0.22);
-      cx.fillStyle = '#f08a24'; cx.beginPath(); cx.moveTo(-s * 0.45, s * 0.05); cx.lineTo(s * 0.35, -s * 0.05); cx.lineTo(s * 0.35, s * 0.05); cx.closePath(); cx.fill(); cx.stroke();
-      cx.fillStyle = '#5cc46a'; cx.beginPath(); cx.moveTo(s * 0.35, -s * 0.05); cx.lineTo(s * 0.5, -s * 0.15); cx.lineTo(s * 0.48, s * 0.02); cx.closePath(); cx.fill(); cx.stroke();
-      const up = Math.max(0, 1 - t * 5) * s * 0.25;
-      cx.save(); cx.translate(0, -s * 0.3 - up); cx.fillStyle = '#e8eef5'; cx.beginPath(); cx.moveTo(-s * 0.25, 0); cx.lineTo(s * 0.15, 0); cx.lineTo(s * 0.15, s * 0.28); cx.lineTo(-s * 0.2, s * 0.22); cx.closePath(); cx.fill(); cx.stroke();
-      cx.fillStyle = '#2b2b2b'; cx.fillRect(s * 0.15, s * 0.02, s * 0.3, s * 0.1); cx.strokeRect(s * 0.15, s * 0.02, s * 0.3, s * 0.1); cx.restore();
-    } else if (k === 'knead') {
-      cx.fillStyle = '#c9c9c9'; cx.beginPath(); cx.ellipse(0, s * 0.15, s * 0.6, s * 0.2, 0, 0, Math.PI); cx.lineTo(-s * 0.6, s * 0.15); cx.fill(); cx.stroke();
-      cx.rotate(t * 3); cx.fillStyle = '#f3dcae'; cx.beginPath(); for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, r = s * (0.32 + Math.sin(a * 3 + t * 6) * 0.04); cx.lineTo(Math.cos(a) * r, Math.sin(a) * r * 0.7); } cx.closePath(); cx.fill(); cx.stroke();
-      cx.beginPath(); cx.arc(0, 0, s * 0.12, 0.5, 4); cx.stroke();
-    } else {
-      const f = Math.cos(Math.min(1, t * 2) * Math.PI * 2) ;
-      cx.fillStyle = '#555'; cx.beginPath(); cx.ellipse(0, s * 0.15, s * 0.55, s * 0.18, 0, 0, Math.PI * 2); cx.fill(); cx.stroke();
-      cx.fillStyle = '#7a4a2a'; cx.fillRect(s * 0.5, s * 0.1, s * 0.5, s * 0.1); cx.strokeRect(s * 0.5, s * 0.1, s * 0.5, s * 0.1);
-      cx.save(); cx.translate(0, -Math.abs(Math.sin(Math.min(1, t * 2) * Math.PI)) * s * 0.5); cx.scale(1, Math.max(0.15, Math.abs(f)) * 0.35);
-      cx.fillStyle = f > 0 ? '#f0c27a' : '#c98a3a'; cx.beginPath(); cx.arc(0, 0, s * 0.35, 0, Math.PI * 2); cx.fill(); cx.stroke(); cx.restore();
+  const BURNT = new T3.Color('#4a2a1a'), GOLD = new T3.Color('#e3a94a');
+  function fryUpdate(p, dt) {
+    const s = G.st[p.pid], o = st3[p.pid], t = p.kb ? tilt[1] : tilt[p.pid];
+    const rz = -t.x * 0.42, rxa = t.y * 0.42; o.panG.rotation.z += (rz - o.panG.rotation.z) * Math.min(1, dt * 10); o.panG.rotation.x += (rxa - o.panG.rotation.x) * Math.min(1, dt * 10);
+    s.toss = Math.max(0, s.toss - dt * 4); o.panG.position.y = 0.45 + s.toss * 0.25;
+    const ax = -9.8 * Math.sin(o.panG.rotation.z), az = 9.8 * Math.sin(o.panG.rotation.x);
+    let onBottom = 0;
+    for (const q of s.parts) {
+      if (q.lost) { q.vy -= 9.8 * dt; q.wp.addScaledVector(q.wv, dt); q.wv.y = q.vy; if (q.wp.y < 0.56 + q.r) { q.wp.y = 0.56 + q.r; q.vy = 0; q.wv.set(0, 0, 0); } q.m.position.copy(q.wp); continue; }
+      if (q.y > 0.001 || q.vy > 0) { q.vy -= 9.8 * dt; q.y += q.vy * dt; q.x += q.vx * dt; q.z += q.vz * dt; if (q.y <= 0) { q.y = 0; q.vy = 0; q.vx *= 0.5; q.vz *= 0.5; } }
+      else { q.vx += ax * dt; q.vz += az * dt; q.vx *= Math.exp(-2.5 * dt); q.vz *= Math.exp(-2.5 * dt); q.x += q.vx * dt; q.z += q.vz * dt; }
+      const r = Math.hypot(q.x, q.z);
+      if (r > PR - q.r) {
+        const vo = (q.vx * q.x + q.vz * q.z) / (r || 1);
+        if (q.y > RIM + 0.12 && vo > 1.1) { // たかく、いきおいよく そとへ → ふちを こえて とびだした
+          q.lost = true; o.panG.updateMatrixWorld(); q.wp = new T3.Vector3(q.x, q.y + 0.1, q.z).applyMatrix4(o.panG.matrixWorld); o.partsG.remove(q.m); o.lostG.add(q.m);
+          q.wv = new T3.Vector3(q.vx, 0, q.vz).applyQuaternion(o.panG.getWorldQuaternion(new T3.Quaternion())); q.m.position.copy(q.wp);
+          if (!s.lostSnd || api.t - s.lostSnd > 0.3) { s.lostSnd = api.t; pop(p.pid, 'とびだした！', 0); PAD.sfx.tone({ f0: 1200, f1: 300, dur: 0.3, vol: 0.12, type: 'sine' }); }
+          continue;
+        }
+        const nx = q.x / r, nz = q.z / r; q.x = nx * (PR - q.r); q.z = nz * (PR - q.r); const vn = q.vx * nx + q.vz * nz; if (vn > 0) { q.vx -= 1.6 * vn * nx; q.vz -= 1.6 * vn * nz; }
+      }
+      // ひに あたっている（そこに ある）あいだ だけ やける。ずっと そこに いると こげる
+      if (q.y <= 0.01) { q.cook += dt * 0.075; q.bottom += dt; onBottom++; if (q.bottom > 4.5) q.cook += dt * 0.25; } else q.bottom = 0;
+      const c = q.cook; q.m.material.color.copy(q.base); if (c < 1) q.m.material.color.lerp(GOLD, c * 0.5); else q.m.material.color.copy(q.base).lerp(GOLD, 0.5).lerp(BURNT, Math.min(1, (c - 1) * 1.6));
+      q.m.position.set(q.x, 0.06 + q.y + q.r, q.z); if (q.y > 0) { q.m.rotation.x += dt * 8; q.m.rotation.z += dt * 6; }
     }
-    cx.restore();
+    s.sz = onBottom;
+    if (s.parts.some(q => !q.lost && q.bottom > 4 && q.cook > 0.9) && (!s.warn || api.t - s.warn > 2)) { s.warn = api.t; pop(p.pid, 'こげそう！ あおって！', 0); }
   }
+  function toss(pid, p) {
+    const s = G.st[pid], o = st3[pid]; if (!s || G.phase !== 'fry') return;
+    const u = Math.max(0, Math.min(1.6, (p - 12) / 26)); s.toss = 1;
+    for (const q of s.parts) { if (q.lost || q.y > 0.05) continue;
+      q.vy = 2.2 + u * 3.2 + Math.random() * 0.8;
+      const spread = 0.4 + u * u * 2.6; q.vx += (Math.random() - 0.5) * spread + q.x * u * u * 0.7; q.vz += (Math.random() - 0.5) * spread + q.z * u * u * 0.7; q.y = 0.02; q.bottom = 0; }
+    PAD.sfx.noise({ dur: 0.25, f0: 1500, f1: 3000, type: 'highpass', vol: 0.12 + u * 0.1 });
+    if (u > 1.05) pop(pid, 'つよすぎ！', 0); else if (u > 0.3) pop(pid, 'いいね！', 1);
+  }
+  let sizT = 0;
+  function sizzle(dt) { if (G.phase !== 'fry') return; sizT -= dt; const n = api.members.reduce((a, p) => a + (G.st[p.pid].sz || 0), 0); if (sizT <= 0 && n > 0) { sizT = 0.12; PAD.sfx.noise({ dur: 0.15, f0: 5000, f1: 3500, vol: Math.min(0.12, 0.02 + n * 0.002) }); } }
+  function friedScore(s) {
+    const alive = s.parts.filter(q => !q.lost); if (!s.parts.length) return 0;
+    const good = alive.reduce((a, q) => a + (q.cook >= 0.55 && q.cook <= 1.25 ? 1 : q.cook >= 0.3 && q.cook <= 1.6 ? 0.5 : 0), 0);
+    return Math.round(50 * good / s.parts.length);
+  }
+  // ---------------- ③ もりつけ ----------------
+  function toPlate() {
+    G.phase = 'plate'; G.pt = 0; frameCamera('plate'); PAD.sfx.go();
+    for (const p of api.members) { const s = G.st[p.pid]; s.fryScore = friedScore(s); st3[p.pid].plate.visible = true; }
+    api.push();
+  }
+  function plate(pid, auto) {
+    const s = G.st[pid], o = st3[pid]; if (!s || s.plated) return;
+    s.plated = true; s.plateT = 0; s.plateScore = auto ? 0 : Math.max(5, Math.round(20 - G.pt * 2.5));
+    PAD.sfx.noise({ dur: 0.3, f0: 800, f1: 300, type: 'lowpass', vol: 0.3 }); if (!auto) { PAD.sfx.good(); pop(pid, 'もりつけ！', 1); api.room.send(pid, { t: 'ok' }); }
+    // さらに ドーム がたに ならべる
+    const alive = s.parts.filter(q => !q.lost); alive.forEach((q, i) => { o.partsG.remove(q.m); o.dome.add(q.m); const a = i * 2.4, rr = Math.sqrt(i / alive.length) * 0.75; q.target = new T3.Vector3(Math.cos(a) * rr, 0.08 + (0.75 - rr) * 0.55 + q.r, Math.sin(a) * rr); q.m.position.set(0, 2.2, -2); q.m.rotation.set(0, 0, 0); });
+    api.push();
+  }
+  function plateUpdate(p, dt) {
+    const s = G.st[p.pid], o = st3[p.pid];
+    if (!s.plated) { const t = p.kb ? tilt[1] : tilt[p.pid]; o.panG.rotation.z = -t.x * 0.3; return; }
+    s.plateT += dt; const u = Math.min(1, s.plateT / 0.5);
+    o.panG.position.set(0, 0.45 + Math.sin(u * Math.PI) * 1.2, -0.2 + u * 2.5); if (u >= 1) o.stove.visible = false; o.panG.rotation.x = u * Math.PI * 0.95; if (u >= 1) o.panG.visible = s.plateT < 0.8;
+    for (const q of s.parts) if (!q.lost && q.target) q.m.position.lerp(q.target, Math.min(1, dt * 8));
+  }
+  function pop(pid, txt, good) { G.pops.push({ pid, txt, good, t: 0 }); }
+
+  // ---------------- 2D ひょうじ ----------------
   function drawScene() {
-    const W = S.W, H = S.H, k = G.list[Math.min(G.i, N_TASK - 1)], T = TASKS[k];
-    D.text((Math.min(G.i, N_TASK - 1) + 1) + ' / ' + N_TASK + 'もんめ', W * 0.03, H * 0.06, H * 0.045, '#fff', 'left', INK);
-    if (G.phase === 'intro') { const u = Math.min(1, G.pt / 0.3); D.text(T.name, W / 2, H * 0.3, H * 0.1 * (0.6 + 0.4 * u), '#fff', 'center', INK); art(k, W / 2, H * 0.52, H * 0.3, G.pt); }
-    else {
-      D.text(T.name, W / 2, H * 0.12, H * 0.075, '#fff', 'center', INK);
-      if (G.phase === 'go') { const left = Math.max(0, G.limit - G.pt); cx.fillStyle = '#fff'; D.rr(W * 0.3, H * 0.19, W * 0.4, H * 0.03, 99); cx.fill(); cx.fillStyle = left < 2 ? '#e5484d' : '#2f9e5b'; D.rr(W * 0.3, H * 0.19, W * 0.4 * left / G.limit, H * 0.03, 99); cx.fill(); cx.lineWidth = 3; cx.strokeStyle = INK; D.rr(W * 0.3, H * 0.19, W * 0.4, H * 0.03, 99); cx.stroke(); }
-      const n = api.members.length, cw = W / n;
-      api.members.forEach((p, i) => {
-        const x = cw * (i + 0.5), pr = Math.min(1, (G.prog[p.pid] || 0) / T.need), done = G.done[p.pid];
-        art(k, x, H * 0.47, Math.min(cw * 0.6, H * 0.28), done ? 9 : G.anim + i * 0.05);
-        const bw = Math.min(cw * 0.7, H * 0.4), by = H * 0.66;
-        cx.fillStyle = '#fff'; D.rr(x - bw / 2, by, bw, H * 0.05, 99); cx.fill(); cx.fillStyle = p.color; D.rr(x - bw / 2, by, Math.max(0.001, bw * pr), H * 0.05, 99); cx.fill(); cx.lineWidth = 3; cx.strokeStyle = INK; D.rr(x - bw / 2, by, bw, H * 0.05, 99); cx.stroke();
-        D.panel(x - bw / 2, H * 0.76, bw, H * 0.15, p.color);
-        const tc = p.color === '#f5c518' ? INK : '#fff';
-        D.text(p.name, x, H * 0.8, H * 0.04, tc); D.text((G.score[p.pid] || 0) + 'こ クリア', x, H * 0.865, H * 0.04, tc);
-        if (done) D.text('クリア！', x, H * 0.33, H * 0.06, '#ffd23f', 'center', INK);
-        else if (G.phase === 'judge') D.text('ざんねん', x, H * 0.33, H * 0.05, '#fff', 'center', INK);
-      });
-    }
-    for (const q of G.pops) { cx.globalAlpha = 1 - q.t; D.text(q.txt, W / 2, H * 0.25 - q.t * H * 0.05, H * 0.04, q.c, 'center', INK); cx.globalAlpha = 1; }
+    const W = S.W, H = S.H;
+    V.render(); cx.clearRect(0, 0, W, H);
+    const T = PH[G.phase];
+    D.text(G.phase === 'show' ? 'チャーハン できあがり！' : (G.phase === 'chop' ? '① ' : G.phase === 'fry' ? '② ' : '③ ') + T.name, W / 2, H * 0.07, H * 0.06, '#fff', 'center', INK);
+    if (T) { const left = Math.max(0, T.time - G.pt); cx.fillStyle = '#fff'; D.rr(W * 0.3, H * 0.125, W * 0.4, H * 0.025, 99); cx.fill(); cx.fillStyle = left < 3 ? '#e5484d' : '#2f9e5b'; D.rr(W * 0.3, H * 0.125, W * 0.4 * left / T.time, H * 0.025, 99); cx.fill(); cx.lineWidth = 3; cx.strokeStyle = INK; D.rr(W * 0.3, H * 0.125, W * 0.4, H * 0.025, 99); cx.stroke(); }
+    api.members.forEach((p, i) => {
+      const s = G.st[p.pid]; if (!s) return;
+      const [x, y] = V.toScreen(SX(i), 0.5, 3.6), bw = Math.min(W / api.members.length * 0.8, H * 0.38);
+      const yy = Math.min(H - H * 0.13, y);
+      D.panel(x - bw / 2, yy, bw, H * 0.11, p.color); const tc = p.color === '#f5c518' ? INK : '#fff';
+      D.text(p.name, x, yy + H * 0.03, H * 0.035, tc);
+      let info = '';
+      if (G.phase === 'chop') info = s.cut.filter(c => c).length + ' / ' + NSEG + ' きれた';
+      else if (G.phase === 'fry') info = 'とびだし ' + s.parts.filter(q => q.lost).length + '  こげ ' + s.parts.filter(q => !q.lost && q.cook > 1.25).length;
+      else if (G.phase === 'plate') info = s.plated ? 'もりつけ OK' : 'うらがえせ！';
+      else info = total(s) + 'てん';
+      D.text(info, x, yy + H * 0.075, H * 0.032, tc);
+      if (G.phase === 'show') { const st = total(s) >= 80 ? 3 : total(s) >= 55 ? 2 : total(s) >= 30 ? 1 : 0; for (let k = 0; k < 3; k++) D.star(x + (k - 1) * H * 0.06, yy - H * 0.05, H * 0.025, k < st);
+        D.text('きる ' + Math.round(s.chopScore) + ' / いためる ' + s.fryScore + ' / もる ' + s.plateScore, x, yy - H * 0.1, H * 0.024, '#fff', 'center', INK); }
+      const [px, py] = V.toScreen(SX(i), 2.2, 0);
+      for (const q of G.pops) if (q.pid === p.pid) { cx.globalAlpha = 1 - q.t; D.text(q.txt, px, py - q.t * 40, H * 0.04, q.good ? '#ffd23f' : '#fff', 'center', INK); cx.globalAlpha = 1; }
+    });
   }
-  window.__game = api; window.__end = () => { G.i = N_TASK - 1; G.phase = 'judge'; G.pt = 9; };
+  build3DLobby();
+  function build3DLobby() { api.members = [{ pid: 0, color: '#fff', name: '' }]; G = { st: { 0: { cut: new Array(NSEG).fill(0) } } }; build3D(); api.members = []; G = {}; }
+  window.__game = api; window.__end = () => { G.phase = 'show'; G.pt = 9; }; window.__phase = ph => { if (ph === 'fry') toFry(); if (ph === 'plate') toPlate(); };
 }
 </script>
 </body>

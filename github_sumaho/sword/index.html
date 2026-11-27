@@ -3,15 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>けんの かまえ たいけつ</title>
+<title>けんげき アイランド</title>
 <!--
-  けんの かまえ たいけつ（2にん）
-  ・スマホの むきで けんを かまえる: うえに むける＝じょうだん、まえ＝ちゅうだん、した＝げだん
-  ・ふると こうげき。あいては おなじ かまえに すると ふせげる（ガード）。ちがうと 1ぽん
-  ・こうげきは すこし ためが あるので、あいての かまえを みて すばやく あわせよう。さきに 3ぼん とったら かち
+  けんげき アイランド（3D・2にん たいせん）
+  ・うみに うかぶ まるい ぶたいで 1たい1。スマホが けんに なる
+  ・スマホの かたむき（よこに まわす）＝ けんの むき。たて・よこ・ななめ
+  ・ふると その むきに きる。きる まえに すこし ためが あるので、あいては みてから ガードできる
+  ・ガード: あいての きる せんと「✕」に なるように けんを かまえる（よこぎり には たて、たてぎり には よこ）
+  ・ガードされると はじかれて すきが できる。あたると おされて、ぶたいから おちたら まけ。さきに 2ラウンド とったら かち
+  ・モニターは 3D（three.js）
 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 /* PAD きょうつう: モニターは キャンバス 1まい、スマホは #pad の なか */
 :root{--ink:#3a2328;--paper:#fffaf0;--ok:#2f9e5b;--blue:#4a9fe0;--me:#3a2328;--head:#3a2328}
@@ -44,39 +48,44 @@ button.sub:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
 .small{font-size:14px;color:#7a6a60;text-align:center;line-height:1.5}
 #conn{text-align:center;padding:40px 16px;font-size:20px;line-height:1.6}
 [hidden]{display:none!important}
+canvas#gl{display:block;position:fixed;inset:0;width:100%;height:100%}
+body.pad #gl{display:none}
 
-:root{--head:#4a3a6b}
-#stance{font-size:44px;font-weight:bold;text-align:center;padding:14px 0;margin:8px 0;border:4px solid var(--ink);border-radius:18px;background:var(--me);color:#fff}
-#fallback .seg button{font-size:20px}
-#atk{background:#e5484d;font-size:30px}
+:root{--head:#1f4e79}
+#ind{display:block;margin:4px auto}
+#fb{display:none}
+#fb .seg button{font-size:16px;padding:12px 2px}
 </style>
 </head>
 <body>
+<canvas id="gl"></canvas>
 <canvas id="cv"></canvas>
 <div id="pad">
-  <header><h1>かまえ たいけつ</h1><span id="badge">…</span></header>
+  <header><h1>けんげき</h1><span id="badge">…</span></header>
   <main>
     <div id="conn">モニターに つないでいます…</div>
     <div id="app" hidden>
-      <div class="card"><div class="msg" id="msg"></div><div class="small" id="sub"></div><div id="stance">ちゅうだん</div></div>
+      <div class="card"><div class="msg" id="msg"></div><div class="small" id="sub"></div><canvas id="ind" width="220" height="250"></canvas></div>
       <button class="big" id="ready">じゅんび OK！</button>
       <div id="hostbox" hidden><button class="big" id="start">スタート</button><button class="big" id="back" style="background:#7a6a60">ロビーへ</button></div>
-      <div id="fallback" hidden>
-        <div class="small">センサーが うごかない ときは ボタンで あそべるよ</div>
-        <div class="seg"><button data-s="2">じょうだん</button><button data-s="1">ちゅうだん</button><button data-s="0">げだん</button></div>
-        <button class="big" id="atk">こうげき！</button>
+      <div id="fb">
+        <div class="small">センサーが うごかない ときは ボタンで</div>
+        <div class="small">かまえ</div>
+        <div class="seg" id="fbg"><button data-c="0">たて</button><button data-c="1">ななめ</button><button data-c="2">よこ</button><button data-c="3">ぎゃく</button></div>
+        <div class="small">きる</div>
+        <div class="seg" id="fbs"><button data-c="0">たて</button><button data-c="1">ななめ</button><button data-c="2">よこ</button><button data-c="3">ぎゃく</button></div>
       </div>
       <div class="card">
         <h2>あそびかた</h2>
         <ol class="how">
-          <li>スマホを けんの つかの ように にぎる</li>
-          <li>うえに むける＝じょうだん、まえに むける＝ちゅうだん、したに むける＝げだん</li>
-          <li>えいっ！と ふると こうげき</li>
-          <li>あいてが おなじ かまえ なら ふせがれる。ちがう かまえ なら 1ぽん！</li>
-          <li>こうげきされたら、あいての かまえに すばやく あわせて ふせごう。さきに 3ぼんで かち</li>
+          <li>スマホを けんの つかの ように たてに にぎる</li>
+          <li>スマホを よこに かたむけると けんの むきが かわる（たて・ななめ・よこ）</li>
+          <li>えいっ！と ふると、ふった むきに きる</li>
+          <li>あいてが きってきたら、その せんと ✕ に なるように かまえると ガード！</li>
+          <li>あたると おされる。ぶたいから おちたら まけ。2ラウンド とったら かち</li>
         </ol>
       </div>
-      <div class="note">・ふるときは まわりに ひとが いないか みてね<br>・スマホを ぎゅっと にぎって、てから はなさないでね</div>
+      <div class="note">ふるときは まわりに ひとが いないか みてね。スマホを ぎゅっと にぎって はなさないでね</div>
     </div>
   </main>
 </div>
@@ -252,7 +261,10 @@ const PAD = (() => {
       g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
     }
-    addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
+    for (const ev of ['pointerdown', 'keydown', 'touchstart', 'mousedown', 'click']) addEventListener(ev, unlock, true);
+    // モニターは ひらいた とたんに おとを ためす。ブラウザが ゆるしていれば（じどうさいせい OK の せってい）そのまま なる。
+    // だめでも 1びょうごとに ためしつづける
+    if (!ROOM) { unlock(); const iv = setInterval(() => { unlock(); if (ok()) clearInterval(iv); }, 1000); }
     return {
       unlock, ok, noise, tone,
       join() { tone({ f0: 660, dur: 0.12 }); tone({ f0: 990, dur: 0.22, delay: 0.1 }); },
@@ -350,6 +362,34 @@ const PAD = (() => {
     let ready = false; addEventListener('resize', fit); fit(); ready = true; return { cx, S };
   }
   function loop(f) { let last = performance.now(); const tick = now => { const dt = Math.min(0.05, (now - last) / 1000); last = now; f(dt); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }  // さいしょも つぎの フレームから（ゲームの へんすうが できてから）
+
+  /* ---------- モニター: 3D（three.js）。#gl キャンバスに かく。2D の #cv は うえに かさねて もじ・パネル用 ----------
+     たいらな いろ（トゥーン）＋ こい ふちどり で、ほかの ゲームの えと そろえる */
+  function gl(opt = {}) {
+    const el = document.getElementById('gl');
+    const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true });
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+    if (opt.shadow) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(opt.bg || '#efe3cc');
+    const camera = new THREE.PerspectiveCamera(opt.fov || 45, 1, 0.1, 500);
+    const grad = new THREE.DataTexture(new Uint8Array([150, 150, 150, 255, 255, 255, 255, 255]), 2, 1, THREE.RGBAFormat);  // 2だんかいの かげ
+    grad.minFilter = grad.magFilter = THREE.NearestFilter; grad.needsUpdate = true;
+    const mats = {};
+    const toon = c => mats[c] || (mats[c] = new THREE.MeshToonMaterial({ color: c, gradientMap: grad }));
+    const inkMat = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
+    // ふちどり: うらがえしの すこし おおきい くろい かたち
+    function outline(mesh, w = 0.05) { const o = new THREE.Mesh(mesh.geometry, inkMat); o.scale.setScalar(1 + w); mesh.add(o); return mesh; }
+    function mesh(geo, color, { ink = 0.05, cast = true, recv = false } = {}) { const m = new THREE.Mesh(geo, toon(color)); m.castShadow = cast; m.receiveShadow = recv; if (ink) outline(m, ink); return m; }
+    scene.add(new THREE.AmbientLight(0xffffff, 0.48));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.62); sun.position.set(4, 10, 6); scene.add(sun); scene.add(sun.target);
+    if (opt.shadow) { sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); const c = sun.shadow.camera; c.left = c.bottom = -20; c.right = c.top = 20; c.near = 0.5; c.far = 60; }
+    function fit() { const W = innerWidth, H = innerHeight; renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix(); }
+    addEventListener('resize', fit); fit();
+    // 3D の いち → がめんの いち（2D の もじを かさねる ため）
+    const v = new THREE.Vector3();
+    function toScreen(x, y, z) { v.set(x, y, z).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight, v.z < 1]; }
+    return { THREE, renderer, scene, camera, sun, toon, outline, mesh, inkMat, toScreen, render: () => renderer.render(scene, camera) };
+  }
 
   /* ---------- モニター: ゲームの ながれ（ロビー → 3・2・1 → プレイ → けっか） ----------
      spec: { id, title, sub, min, max, bg, init(members), update(dt), draw(), onData(p, d), stateFor(p), onKey(e), resize(W, H) }
@@ -452,129 +492,212 @@ const PAD = (() => {
     return Object.assign(P, { net, send: o => net.send(o), render, me: net.me });
   }
 
-  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone };
+  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone, gl };
 })();
 
 </script>
 <script>
 'use strict';
-const GAME_ID = 'sword', WIN = 3;
-const SN = ['げだん', 'ちゅうだん', 'じょうだん'];
+const GAME_ID = 'sword', WIN = 2, R_STAGE = 4.2, WIND = 0.42;
+const CN = ['たて', 'ななめ', 'よこ', 'ぎゃくななめ'];          // けんの むき・きる むき（45どずつ）
+const CA = [0, 45, 90, 135];
+const cls = a => ((Math.round(((a % 180) + 180) % 180 / 45)) % 4);
+const cross = c => (c + 2) % 4;                                 // ✕ に なる むき
 if (PAD.isPad) startPad(); else startMonitor();
 
 function startPad() {
   const $ = id => document.getElementById(id), S = PAD.sensors;
-  let lastOri = 0, stance = 1, manual = null; const hist = [];
-  const P = PAD.phone({ id: GAME_ID, msgs: { count: 'かまえて！' }, onState: d => { $('fallback').hidden = !(d.st === 'play') || performance.now() - lastOri < 1500; } });
-  // ベータ（まえうしろの かたむき）で かまえを きめる
-  S.on('orient', o => { lastOri = performance.now(); const b = o.beta; const s = b > 62 ? 2 : b > 22 ? 1 : 0; hist.push([lastOri, s]); while (hist.length > 40) hist.shift(); if (s !== stance && !manual) setStance(s); });
-  function setStance(s) { stance = s; $('stance').textContent = SN[s]; P.send({ t: 'stance', s }); if (navigator.vibrate) navigator.vibrate(15); }
-  // ふる まえ（0.25びょう まえ）の かまえで こうげき（ふると むきが かわるため）
-  S.onShake(p => { const t = performance.now() - 250; let s = stance; for (const [ht, hs] of hist) if (ht <= t) s = hs; attack(s, p); }, { th: 16, gap: 400 });
-  function attack(s, p) { if (P.st.st !== 'play') return; P.send({ t: 'atk', s }); PAD.sfx.noise({ dur: 0.15, f0: 3000, f1: 6000, type: 'highpass', vol: 0.12 }); }
-  for (const b of document.querySelectorAll('#fallback .seg button')) b.onclick = () => { manual = +b.dataset.s; setStance(manual); };
-  $('atk').onclick = () => attack(stance, 20);
-  setInterval(() => P.send({ t: 'stance', s: stance }), 500);
+  let gx = 0, gy = 9.8, sgn = 0, lastMot = 0, roll = 0, manual = null, opp = null;
+  const P = PAD.phone({ id: GAME_ID, msgs: { count: 'けんを かまえて！' }, onState: d => {
+    opp = d.st === 'play' ? d.opp : null;
+    $('fb').style.display = d.st === 'play' && performance.now() - lastMot > 1500 ? 'block' : 'none';
+  }, onData: d => { if (d.t === 'warn' && navigator.vibrate) navigator.vibrate(120); } });
+  // スマホの「よこの かたむき」（がめんの なかでの まわり）を じゅうりょくから もとめる
+  const cal0 = S.calibrate; S.calibrate = () => { cal0(); if (performance.now() - lastMot < 1000) sgn = Math.sign(gy) || 1; };
+  S.on('motion', e => { const g = e.accelerationIncludingGravity; if (!g || g.x == null) return; gx += (g.x - gx) * 0.35; gy += (g.y - gy) * 0.35; lastMot = performance.now(); if (!sgn) sgn = Math.sign(gy) || 1; roll = Math.atan2(gx, gy * sgn) * 180 / Math.PI; });
+  S.onShake((p, v) => {
+    if (manual != null || !v) return;
+    const m = Math.atan2(v[0], v[1]) * 180 / Math.PI + roll;   // ふった むき（がめんの なかの せん）
+    swing(cls(m), p);
+  }, { th: 15, gap: 380 });
+  function swing(c, p) { if (P.st.st !== 'play') return; P.send({ t: 'swing', c, p }); PAD.sfx.noise({ dur: 0.18, f0: 2500, f1: 6000, type: 'highpass', vol: 0.12 }); if (navigator.vibrate) navigator.vibrate(30); }
+  for (const b of document.querySelectorAll('#fbg button')) b.onclick = () => { manual = +b.dataset.c; };
+  for (const b of document.querySelectorAll('#fbs button')) b.onclick = () => swing(+b.dataset.c, 25);
+  const ic = $('ind'), ix = ic.getContext('2d');
+  let t0 = 0;
+  (function frame(now) {
+    const ang = manual != null ? CA[manual] : roll;
+    if (now - t0 > 60) { t0 = now; P.send({ t: 'guard', a: Math.round(ang) }); }
+    ix.clearRect(0, 0, 220, 250); ix.lineCap = 'round';
+    ix.fillStyle = '#fff'; ix.beginPath(); ix.arc(110, 110, 104, 0, Math.PI * 2); ix.fill(); ix.lineWidth = 4; ix.strokeStyle = PAD.INK; ix.stroke();
+    if (opp != null) { const a = CA[opp] * Math.PI / 180; ix.strokeStyle = '#e5484d'; ix.lineWidth = 14; ix.globalAlpha = 0.7; ix.beginPath(); ix.moveTo(110 - Math.sin(a) * 90, 110 - Math.cos(a) * 90); ix.lineTo(110 + Math.sin(a) * 90, 110 + Math.cos(a) * 90); ix.stroke(); ix.globalAlpha = 1; }
+    const a = ang * Math.PI / 180; ix.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--me'); ix.lineWidth = 12;
+    ix.beginPath(); ix.moveTo(110 - Math.sin(a) * 80, 110 + Math.cos(a) * 80); ix.lineTo(110 + Math.sin(a) * 80, 110 - Math.cos(a) * 80); ix.stroke();
+    ix.fillStyle = PAD.INK; ix.font = 'bold 18px sans-serif'; ix.textAlign = 'center'; ix.fillText('かまえ：' + CN[cls(ang)], 110, 242);
+    if (opp != null) { ix.fillStyle = '#e5484d'; ix.font = 'bold 20px sans-serif'; ix.fillText(CN[opp] + 'ぎりが くる！', 110, 118); }
+    requestAnimationFrame(frame);
+  })(0);
 }
 
 function startMonitor() {
   let G = {};
   const api = PAD.game({
-    id: GAME_ID, title: 'けんの かまえ たいけつ', sub: 'スマホで かまえて ふる！ あいての かまえを よもう（2にん）', min: 2, max: 2, countMsg: 'かまえて！',
-    init(members) {
-      G = { f: {}, pops: [], flash: 0, shake: 0, winner: null, endT: 0 };
-      members.forEach((p, i) => { G.f[p.pid] = { side: i ? 1 : -1, stance: 1, pts: 0, atk: null, cool: 0, hitT: 0, guardT: 0, x: i ? 0.68 : 0.32 }; });
-    },
+    id: GAME_ID, title: 'けんげき アイランド', sub: 'スマホが けんに なる！ ✕で ガード、おしだして かて（2にん）', min: 2, max: 2, countMsg: 'けんを かまえて！',
+    init(members) { G = { wins: {}, round: 1, phase: 'fight', pt: 0, f: {}, pops: [], sparks: [], shake: 0, winner: null }; for (const p of members) G.wins[p.pid] = 0; newRound(); },
     onData(p, d) {
       const f = G.f[p.pid]; if (!f) return;
-      if (d.t === 'stance') f.stance = Math.max(0, Math.min(2, d.s | 0));
-      else if (d.t === 'atk' && !f.atk && f.cool <= 0 && f.hitT <= 0 && !G.winner) {
-        f.atk = { s: Math.max(0, Math.min(2, d.s | 0)), t: 0 }; f.stance = f.atk.s;
-        PAD.sfx.tone({ f0: 300, f1: 900, dur: 0.3, vol: 0.12, type: 'sawtooth' });
-        api.room.send(opp(p.pid), { t: 'vibe', ms: 120 }); api.push();
+      if (d.t === 'guard') { f.gAng = +d.a || 0; f.g = cls(f.gAng); }
+      else if (d.t === 'swing' && G.phase === 'fight' && !f.atk && f.cool <= 0 && f.stun <= 0 && !f.fall) {
+        f.atk = { c: Math.max(0, Math.min(3, d.c | 0)), t: 0, pow: Math.max(0.8, Math.min(1.4, (+d.p || 20) / 22)) };
+        PAD.sfx.tone({ f0: 250, f1: 700, dur: WIND, vol: 0.1, type: 'sawtooth' }); api.room.send(opp(p.pid), { t: 'warn' }); api.push();
       }
     },
     stateFor(p) {
       const f = G.f && G.f[p.pid]; if (!f) return {};
       const o = G.f[opp(p.pid)];
       if (api.st === 'final') return { msg: G.winner === p.pid ? 'かち！' : 'まけ…' };
-      return { msg: f.pts + ' たい ' + (o ? o.pts : 0), sub: o && o.atk ? 'くるぞ！ ' + SN[o.atk.s] + 'で ふせげ！' : 'ふって こうげき' };
+      if (G.phase === 'roundEnd') return { msg: G.roundWin === p.pid ? 'ラウンド ゲット！' : 'おちた…', sub: 'つぎの ラウンドへ' };
+      return { msg: (G.wins[p.pid] || 0) + ' たい ' + (G.wins[opp(p.pid)] || 0), sub: o && o.atk ? CN[o.atk.c] + 'ぎりが くる！ ' + CN[cross(o.atk.c)] + 'に かまえて ガード' : 'ふって きれ！', opp: o && o.atk ? o.atk.c : null };
     },
     update(dt) {
-      G.flash = Math.max(0, G.flash - dt); G.shake = Math.max(0, G.shake - dt);
+      G.pt += dt; G.shake = Math.max(0, G.shake - dt);
       for (const pid in G.f) {
-        const f = G.f[pid]; f.cool -= dt; f.hitT -= dt; f.guardT -= dt;
-        if (f.atk) { f.atk.t += dt; if (f.atk.t >= 0.45) resolve(+pid); }
+        const f = G.f[pid]; f.cool -= dt; f.stun -= dt; f.hitT -= dt; f.gT -= dt;
+        // はなれていたら すこしずつ ちかづく（とどく きょりまで）
+        const o2 = G.f[opp(+pid)]; if (o2 && G.phase === 'fight' && !f.fall && f.stun <= 0 && Math.abs(o2.x - f.x) > 2.4) f.tx = clampX(f.tx + Math.sign(o2.x - f.x) * 0.9 * dt);
+        f.x += (f.tx - f.x) * Math.min(1, dt * 8);
+        if (f.atk) { f.atk.t += dt; if (f.atk.t >= WIND) resolve(+pid); }
+        if (f.fall) { f.fall += dt; }
       }
       for (const q of G.pops) q.t += dt; G.pops = G.pops.filter(q => q.t < 1);
-      if (G.winner) { G.endT += dt; if (G.endT > 1.8) { const w = api.members.find(m => m.pid === G.winner); api.finish(w.name + 'の かち！', api.members.map(m => ({ color: m.color, a: m.name, b: G.f[m.pid].pts + 'ほん', hi: m.pid === G.winner }))); } }
+      for (const s of G.sparks) { s.t += dt; s.p.addScaledVector(s.v, dt); s.v.y -= 9.8 * dt; } G.sparks = G.sparks.filter(s => s.t < 0.8);
+      if (G.phase === 'roundEnd' && G.pt > 2.6) {
+        if (G.wins[G.roundWin] >= WIN) { G.winner = G.roundWin; const w = api.members.find(m => m.pid === G.winner); api.finish(w.name + 'の しょうり！', api.members.map(m => ({ color: m.color, a: m.name, b: G.wins[m.pid] + 'ラウンド', hi: m.pid === G.winner }))); }
+        else { G.round++; newRound(); }
+      }
+      if (G.phase === 'fight' && G.pt > 60) { const [a, b] = api.members; endRound(Math.abs(G.f[a.pid].x) < Math.abs(G.f[b.pid].x) ? a.pid : b.pid); }
     },
     draw() { drawScene(); },
-    bg(W, H) { cx.fillStyle = '#e8dcc3'; cx.fillRect(0, 0, W, H); cx.fillStyle = '#d4c19c'; for (let i = 0; i < W; i += H * 0.22) cx.fillRect(i, 0, 6, H * 0.72); cx.fillStyle = '#b98d5a'; cx.fillRect(0, H * 0.72, W, H * 0.28); cx.fillStyle = '#a47a4a'; for (let i = 0; i < W; i += H * 0.15) cx.fillRect(i, H * 0.72, 3, H * 0.28); },
+    bg() { if (api.st === 'lobby') { V.camera.position.set(Math.sin(api.t * 0.25) * 9, 4, Math.cos(api.t * 0.25) * 9); V.camera.lookAt(0, 1, 0); updateFighters(1 / 60); V.render(); } },
   });
   const cx = api.cx, D = api.D, S = api.S, INK = PAD.INK;
   const opp = pid => (api.members.find(m => m.pid !== pid) || {}).pid;
+  function newRound() {
+    G.phase = 'fight'; G.pt = 0; G.roundWin = null;
+    api.members.forEach((p, i) => { const side = i ? 1 : -1; G.f[p.pid] = { side, x: side * 1.4, tx: side * 1.4, g: 0, gAng: 0, atk: null, cool: 0, stun: 0, hitT: 0, gT: 0, fall: 0, swingT: 9, swingC: 0 }; });
+    api.room.broadcast({ t: 'calib' }); api.push();
+  }
+  function endRound(winPid) { G.phase = 'roundEnd'; G.pt = 0; G.roundWin = winPid; G.wins[winPid]++; PAD.sfx.fanfare(); api.push(); }
   function resolve(pid) {
-    const f = G.f[pid], o = G.f[opp(pid)], a = f.atk; f.atk = null; f.cool = 0.7;
-    if (!o) return;
-    if (o.stance === a.s) {  // ガード
-      o.guardT = 0.4; PAD.sfx.tone({ f0: 1800, dur: 0.25, vol: 0.18, type: 'square' }); PAD.sfx.tone({ f0: 2400, dur: 0.3, vol: 0.1, type: 'triangle' }); PAD.sfx.noise({ dur: 0.2, f0: 4000, f1: 2000, vol: 0.2 });
-      G.pops.push({ txt: 'ガード！', x: o.x, t: 0, c: '#fff' }); api.room.send(opp(pid), { t: 'vibe', ms: 60 });
-    } else {  // 1ぽん
-      f.pts++; o.hitT = 0.7; G.flash = 0.2; G.shake = 0.3; PAD.sfx.noise({ dur: 0.35, f0: 900, f1: 120, type: 'lowpass', vol: 0.6 }); PAD.sfx.good();
-      G.pops.push({ txt: SN[a.s] + ' 1ぽん！', x: o.x, t: 0, c: api.members.find(m => m.pid === pid).color });
-      api.room.send(opp(pid), { t: 'vibe', ms: 400 }); api.room.send(pid, { t: 'vibe', ms: 80 });
-      if (f.pts >= WIN) { G.winner = pid; G.endT = 0; }
+    const f = G.f[pid], o = G.f[opp(pid)], a = f.atk; f.atk = null; f.cool = 0.45; f.swingT = 0; f.swingC = a.c;
+    if (!o || o.fall) return;
+    const near = Math.abs(f.x - o.x) < 3.3;   // とどく きょり
+    if (!near) { PAD.sfx.noise({ dur: 0.2, f0: 2000, f1: 5000, type: 'highpass', vol: 0.1 }); G.pops.push({ pid, txt: 'とどかない', t: 0 }); api.push(); return; }
+    if (o.g === cross(a.c) && o.stun <= 0) {   // ガード → はじく
+      o.gT = 0.35; f.stun = 0.7; f.tx -= f.side * -0.35 * -1; f.tx = clampX(f.x - (o.x - f.x) * 0.15);
+      PAD.sfx.tone({ f0: 1900, dur: 0.25, vol: 0.18, type: 'square' }); PAD.sfx.tone({ f0: 2600, dur: 0.35, vol: 0.1 }); PAD.sfx.noise({ dur: 0.2, f0: 5000, f1: 2500, vol: 0.2 });
+      spark((f.x + o.x) / 2, '#ffe680', 16); G.pops.push({ pid: opp(pid), txt: 'ガード！', t: 0, good: true });
+    } else {                                    // あたり → おす
+      o.hitT = 0.5; G.shake = 0.3; const dir = Math.sign(o.x - f.x) || o.side; o.tx = o.x + dir * 1.15 * a.pow;
+      PAD.sfx.noise({ dur: 0.35, f0: 900, f1: 120, type: 'lowpass', vol: 0.6 }); PAD.sfx.tone({ f0: 180, f1: 60, dur: 0.3, vol: 0.25, type: 'sine' });
+      spark(o.x, '#ffffff', 22); G.pops.push({ pid: opp(pid), txt: CN[a.c] + 'ぎり ヒット！', t: 0 });
+      api.room.send(opp(pid), { t: 'vibe', ms: 300 });
+      if (Math.abs(o.tx) > R_STAGE - 0.3) { o.fall = 0.001; PAD.sfx.tone({ f0: 700, f1: 120, dur: 0.8, vol: 0.18, type: 'sine' }); setTimeout(() => PAD.sfx.noise({ dur: 0.8, f0: 1500, f1: 200, vol: 0.5 }), 600); endRound(pid); }
     }
     api.push();
   }
-  const ANG = [0.55, 0, -0.75];  // かまえの けんの むき（げだん・ちゅうだん・じょうだん）
-  function fighter(p, f) {
-    const W = S.W, H = S.H, k = H * 0.0028, sd = f.side, bx = W * f.x + (f.hitT > 0 ? -sd * -1 * H * 0.04 * f.hitT : 0) * 1, by = H * 0.72;
-    const x = bx + (f.atk ? -sd * H * 0.03 * Math.min(1, f.atk.t / 0.45) : 0);
-    cx.save(); cx.translate(x, by); cx.scale(-sd, 1);  // みぎむきに そろえて かく
-    cx.lineJoin = cx.lineCap = 'round'; cx.strokeStyle = INK; cx.lineWidth = 5;
-    // かげ
-    cx.fillStyle = 'rgba(58,35,40,.25)'; cx.beginPath(); cx.ellipse(0, 0, 60 * k, 12 * k, 0, 0, Math.PI * 2); cx.fill();
-    // あし・どう（はかま）
-    cx.fillStyle = '#3d4a7a'; cx.beginPath(); cx.moveTo(-34 * k, 0); cx.lineTo(-20 * k, -70 * k); cx.lineTo(20 * k, -70 * k); cx.lineTo(36 * k, 0); cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = p.color; cx.beginPath(); cx.roundRect(-22 * k, -125 * k, 44 * k, 60 * k, 10 * k); cx.fill(); cx.stroke();
-    // あたま（はちまき）
-    cx.fillStyle = '#f6d3a8'; cx.beginPath(); cx.arc(0, -150 * k, 24 * k, 0, Math.PI * 2); cx.fill(); cx.stroke();
-    cx.fillStyle = p.color; cx.fillRect(-25 * k, -162 * k, 50 * k, 9 * k); cx.strokeRect(-25 * k, -162 * k, 50 * k, 9 * k);
-    cx.fillStyle = INK; cx.beginPath(); cx.arc(10 * k, -148 * k, 3.5 * k, 0, Math.PI * 2); cx.fill();
-    if (f.hitT > 0) { cx.lineWidth = 3; cx.beginPath(); cx.moveTo(4 * k, -153 * k); cx.lineTo(16 * k, -143 * k); cx.moveTo(16 * k, -153 * k); cx.lineTo(4 * k, -143 * k); cx.stroke(); cx.lineWidth = 5; }
-    // うで と けん
-    const s = f.atk ? f.atk.s : f.stance;
-    let a = ANG[s]; if (f.atk) { const u = f.atk.t / 0.45; a = u < 0.75 ? ANG[s] - 0.9 * (u / 0.75) : ANG[s] + 0.5; }
-    const hx = 28 * k, hy = (-100 + s * -12) * k;
-    cx.beginPath(); cx.moveTo(10 * k, -110 * k); cx.lineTo(hx, hy); cx.stroke();
-    cx.save(); cx.translate(hx, hy); cx.rotate(a);
-    cx.fillStyle = '#7a4a2a'; cx.fillRect(-14 * k, -4 * k, 18 * k, 8 * k); cx.strokeRect(-14 * k, -4 * k, 18 * k, 8 * k);
-    cx.fillStyle = '#f5c518'; cx.beginPath(); cx.ellipse(5 * k, 0, 3 * k, 10 * k, 0, 0, Math.PI * 2); cx.fill(); cx.stroke();
-    cx.fillStyle = f.guardT > 0 ? '#fff6a0' : '#e8eef5'; cx.beginPath(); cx.moveTo(8 * k, -4 * k); cx.lineTo(120 * k, -3 * k); cx.lineTo(132 * k, 0); cx.lineTo(120 * k, 4 * k); cx.lineTo(8 * k, 4 * k); cx.closePath(); cx.fill(); cx.stroke();
-    if (f.atk && f.atk.t < 0.34) { cx.strokeStyle = '#ffd23f'; cx.lineWidth = 3; cx.beginPath(); cx.moveTo(40 * k, -10 * k); cx.lineTo(120 * k, -12 * k); cx.stroke(); }
-    cx.restore(); cx.restore();
-    // かまえの なふだ
-    const lab = f.atk ? SN[f.atk.s] + '！' : SN[f.stance];
-    D.panel(W * f.x - H * 0.09, H * 0.13, H * 0.18, H * 0.075, f.atk ? '#ffd23f' : '#fff', 12);
-    D.text(lab, W * f.x, H * 0.168, H * 0.036);
+  const clampX = x => Math.max(-R_STAGE + 0.4, Math.min(R_STAGE - 0.4, x));
+
+  // ---------------- 3D（ここは ほかの ゲームと そろえない。リアルめの ひかり） ----------------
+  const V = PAD.gl({ bg: '#86c8f0', shadow: true, fov: 40 }), T3 = THREE;
+  for (const l of V.scene.children) if (l.isAmbientLight) l.intensity = 0.25;
+  V.scene.fog = new T3.Fog('#86c8f0', 25, 70);
+  V.scene.add(new T3.HemisphereLight('#dff3ff', '#3a6a5a', 0.6));
+  V.sun.position.set(6, 12, 8); V.sun.intensity = 0.9;
+  const std = (c, o = {}) => new T3.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.6, metalness: 0.05 }, o));
+  // うみ
+  const sea = new T3.Mesh(new T3.PlaneGeometry(200, 200, 60, 60), std('#2f8fd0', { roughness: 0.25, metalness: 0.2 })); sea.rotation.x = -Math.PI / 2; sea.position.y = -1.6; sea.receiveShadow = true; V.scene.add(sea);
+  const seaPos = sea.geometry.attributes.position, seaBase = seaPos.array.slice();
+  // ぶたい（いたばり の まるい しま）
+  function plankTex() { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#c8935a' : '#b9824b'; g.fillRect(0, i * 32, 256, 32); g.fillStyle = 'rgba(0,0,0,.15)'; g.fillRect(0, i * 32, 256, 2); } const t = new T3.CanvasTexture(c); t.wrapS = t.wrapT = T3.RepeatWrapping; t.repeat.set(2, 2); return t; }
+  const stage = new T3.Mesh(new T3.CylinderGeometry(R_STAGE, R_STAGE, 0.5, 48), [std('#8a5a33'), std('#ffffff', { map: plankTex() }), std('#8a5a33')]); stage.position.y = -0.25; stage.receiveShadow = true; stage.castShadow = true; V.scene.add(stage);
+  const rim = new T3.Mesh(new T3.TorusGeometry(R_STAGE, 0.08, 8, 64), std('#e8c070', { metalness: 0.6, roughness: 0.3 })); rim.rotation.x = Math.PI / 2; V.scene.add(rim);
+  const rock = new T3.Mesh(new T3.CylinderGeometry(R_STAGE * 0.8, R_STAGE * 0.3, 3, 10), std('#6f6a60')); rock.position.y = -2; V.scene.add(rock);
+  for (let i = 0; i < 6; i++) { const t = new T3.Mesh(new T3.ConeGeometry(0.4, 0.8, 6), std('#e8c070', { metalness: 0.5 })); const a = i / 6 * Math.PI * 2; t.position.set(Math.cos(a) * R_STAGE, 0.3, Math.sin(a) * R_STAGE); V.scene.add(t); }
+  // せんし
+  const F3 = {};
+  function makeFighter(color) {
+    const g = new T3.Group(), body = new T3.Group(); g.add(body);
+    const sh = (m) => { m.castShadow = true; return m; };
+    const legs = sh(new T3.Mesh(new T3.CylinderGeometry(0.32, 0.4, 0.9, 16), std('#2b2f45'))); legs.position.y = 0.45; body.add(legs);
+    const torso = sh(new T3.Mesh(new T3.CylinderGeometry(0.36, 0.33, 0.8, 16), std(color))); torso.position.y = 1.3; body.add(torso);
+    const belt = new T3.Mesh(new T3.CylinderGeometry(0.37, 0.37, 0.1, 16), std('#f5f0e0')); belt.position.y = 0.95; body.add(belt);
+    const head = sh(new T3.Mesh(new T3.SphereGeometry(0.3, 24, 18), std('#f2c9a0'))); head.position.y = 1.95; body.add(head);
+    const band = new T3.Mesh(new T3.TorusGeometry(0.29, 0.05, 8, 24), std(color)); band.rotation.x = Math.PI / 2; band.position.y = 2.02; body.add(band);
+    for (const z of [-0.11, 0.11]) { const e = new T3.Mesh(new T3.SphereGeometry(0.04, 8, 6), std('#222')); e.position.set(0.27, 1.97, z); body.add(e); }
+    // けん（むねの まえ。rotation.x が けんの むき）
+    const arm = new T3.Group(); arm.position.set(0.5, 1.3, 0); body.add(arm);
+    const hilt = new T3.Mesh(new T3.CylinderGeometry(0.05, 0.05, 0.35, 8), std('#3a2a22')); arm.add(hilt);
+    const guard = new T3.Mesh(new T3.BoxGeometry(0.08, 0.06, 0.3), std('#e8c070', { metalness: 0.7, roughness: 0.3 })); guard.position.y = 0.2; arm.add(guard);
+    const blade = sh(new T3.Mesh(new T3.BoxGeometry(0.06, 1.5, 0.12), std('#e8eef5', { metalness: 0.15, roughness: 0.3, emissive: '#000000' }))); blade.position.y = 0.97; arm.add(blade);
+    const trail = new T3.Mesh(new T3.RingGeometry(0.6, 1.75, 24, 1, -0.9, 1.8), new T3.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, side: T3.DoubleSide, depthWrite: false })); trail.rotation.y = Math.PI / 2; arm.add(trail);
+    return { g, body, arm, blade, trail };
+  }
+  function ensureFighters() {
+    for (const p of api.members) if (!F3[p.pid]) { const m = makeFighter(p.color); F3[p.pid] = m; V.scene.add(m.g); }
+    for (const k in F3) if (!api.members.some(p => p.pid === +k) && api.st !== 'lobby') { V.scene.remove(F3[k].g); delete F3[k]; }
+  }
+  let sparks3 = [];
+  function spark(x, color, n) { for (let i = 0; i < n; i++) { const m = new T3.Mesh(new T3.SphereGeometry(0.05, 6, 4), new T3.MeshBasicMaterial({ color })); m.position.set(x, 1.5, 0); V.scene.add(m); sparks3.push({ m, v: new T3.Vector3((Math.random() - 0.5) * 6, Math.random() * 5, (Math.random() - 0.5) * 6), t: 0 }); } }
+  function updateFighters(dt) {
+    const t = performance.now() / 1000;
+    for (let i = 0; i < seaPos.count; i++) { const x = seaBase[i * 3], y = seaBase[i * 3 + 1]; seaPos.array[i * 3 + 2] = Math.sin(x * 0.4 + t * 1.2) * 0.12 + Math.cos(y * 0.5 + t) * 0.1; } seaPos.needsUpdate = true;
+    if (api.st === 'lobby' && !Object.keys(F3).length) { const a = makeFighter('#e5484d'), b = makeFighter('#3d6bd6'); a.g.position.x = -1.4; b.g.position.x = 1.4; b.g.rotation.y = Math.PI; F3.l1 = a; F3.l2 = b; V.scene.add(a.g); V.scene.add(b.g); }
+    if (api.st !== 'lobby') { if (F3.l1) { V.scene.remove(F3.l1.g); V.scene.remove(F3.l2.g); delete F3.l1; delete F3.l2; } ensureFighters(); }
+    for (const k in F3) {
+      const m = F3[k], f = G.f && G.f[k];
+      if (!f) { m.arm.rotation.x = Math.sin(t * 2 + (k === 'l1' ? 0 : 2)) * 0.6; continue; }
+      const face = f.side < 0 ? 0 : Math.PI; m.g.rotation.y = face;
+      let y = 0, rz = 0; if (f.fall) { y = -f.fall * f.fall * 6; rz = -f.fall * 3; }
+      m.g.position.set(f.x, y + (f.hitT > 0 ? Math.sin(f.hitT * 30) * 0.05 : 0), 0); m.body.rotation.z = rz + (f.hitT > 0 ? 0.25 : 0) + (f.stun > 0 ? Math.sin(f.stun * 40) * 0.08 : 0);
+      // けんの むき: かまえ → ため → ふりぬき
+      let ang = (f.gAng || 0) * Math.PI / 180, fwd = 0, op = 0;
+      if (f.atk) { const u = f.atk.t / WIND; ang = CA[cross(f.atk.c)] * Math.PI / 180 - 0.9 * u; fwd = -0.25 * u; m.blade.material.emissive.set('#ff9a2e').multiplyScalar(0.3 + 0.7 * u); }
+      else if (f.swingT < 0.25) { const u = f.swingT / 0.25; ang = CA[cross(f.swingC)] * Math.PI / 180 - 0.9 + 2.4 * u; fwd = 0.4 * Math.sin(u * Math.PI); op = 0.8 * (1 - u); m.blade.material.emissive.set('#000'); }
+      else m.blade.material.emissive.set(f.gT > 0 ? '#fff6a0' : '#000');
+      f.swingT += dt;
+      m.arm.rotation.x += (ang - m.arm.rotation.x) * Math.min(1, dt * 18); m.arm.position.x = 0.5 + fwd; m.trail.material.opacity = op;
+    }
+    for (const s of sparks3) { s.t += dt; s.m.position.addScaledVector(s.v, dt); s.v.y -= 9.8 * dt; s.m.scale.setScalar(Math.max(0.01, 1 - s.t * 1.5)); }
+    sparks3 = sparks3.filter(s => { if (s.t > 0.7) { V.scene.remove(s.m); return false; } return true; });
   }
   function drawScene() {
     const W = S.W, H = S.H;
-    cx.save(); if (G.shake > 0) cx.translate((Math.random() - 0.5) * 16 * G.shake, (Math.random() - 0.5) * 16 * G.shake);
-    for (const p of api.members) if (G.f[p.pid]) fighter(p, G.f[p.pid]);
-    cx.restore();
-    for (const q of G.pops) { const u = q.t; cx.globalAlpha = 1 - u * u; D.text(q.txt, W * q.x, H * 0.32 - u * H * 0.06, H * 0.08, q.c, 'center', INK); cx.globalAlpha = 1; }
-    if (G.flash > 0) { cx.fillStyle = `rgba(255,255,255,${G.flash * 3})`; cx.fillRect(0, 0, W, H); }
-    // スコア（まるい しるし）
-    api.members.forEach((p, i) => { const f = G.f[p.pid]; if (!f) return; const x0 = i ? W * 0.97 : W * 0.03, dir = i ? -1 : 1;
-      D.text(p.name, x0, H * 0.05, H * 0.045, p.color, i ? 'right' : 'left', INK);
-      for (let k = 0; k < WIN; k++) { const cxp = x0 + dir * (H * 0.1 + k * H * 0.06); cx.beginPath(); cx.arc(cxp, H * 0.05, H * 0.022, 0, Math.PI * 2); cx.fillStyle = k < f.pts ? p.color : '#fff'; cx.fill(); cx.lineWidth = 3; cx.strokeStyle = INK; cx.stroke(); } });
-    D.text('おなじ かまえで ガード、ちがうと 1ぽん', W / 2, H * 0.05, H * 0.032, '#7a6a60');
-    if (G.winner) D.text('しょうぶ あり！', W / 2, H * 0.45, H * 0.12, '#fff', 'center', INK);
+    updateFighters(1 / 60);
+    const sh = G.shake > 0 ? (Math.random() - 0.5) * 0.25 * G.shake * 3 : 0;
+    V.camera.position.set(3.2 + sh, 4.2, 9.5); V.camera.lookAt(0, 1.1, 0);
+    V.render(); cx.clearRect(0, 0, W, H);
+    // かまえの マーク（あたまの うえ）と、くる こうげきの せん
+    api.members.forEach((p, i) => {
+      const f = G.f[p.pid]; if (!f) return;
+      const [x, y] = V.toScreen(f.x, 2.9, 0), r = H * 0.055;
+      cx.fillStyle = 'rgba(255,255,255,.9)'; cx.beginPath(); cx.arc(x, y, r, 0, Math.PI * 2); cx.fill(); cx.lineWidth = 3; cx.strokeStyle = INK; cx.stroke();
+      const a = CA[f.g] * Math.PI / 180 * (f.side < 0 ? 1 : -1); cx.strokeStyle = p.color; cx.lineWidth = 8; cx.lineCap = 'round'; cx.beginPath(); cx.moveTo(x - Math.sin(a) * r * 0.75, y + Math.cos(a) * r * 0.75); cx.lineTo(x + Math.sin(a) * r * 0.75, y - Math.cos(a) * r * 0.75); cx.stroke();
+      const o = G.f[opp(p.pid)];
+      if (o && o.atk) { const b = CA[o.atk.c] * Math.PI / 180 * (f.side < 0 ? 1 : -1), u = o.atk.t / WIND; cx.globalAlpha = 0.5 + 0.5 * u; cx.strokeStyle = '#e5484d'; cx.lineWidth = 6; cx.setLineDash([8, 6]); cx.beginPath(); cx.moveTo(x - Math.sin(b) * r * 1.4, y + Math.cos(b) * r * 1.4); cx.lineTo(x + Math.sin(b) * r * 1.4, y - Math.cos(b) * r * 1.4); cx.stroke(); cx.setLineDash([]); cx.globalAlpha = 1;
+        D.text('！', x + r * 1.4, y - r, H * 0.06, '#e5484d', 'center', '#fff'); }
+      D.text(p.name, x, y - r - H * 0.03, H * 0.035, '#fff', 'center', INK);
+    });
+    for (const q of G.pops) { const f = G.f[q.pid]; if (!f) continue; const [x, y] = V.toScreen(f.x, 2.2, 0); cx.globalAlpha = 1 - q.t; D.text(q.txt, x, y - q.t * 50, H * 0.05, q.good ? '#ffe680' : '#fff', 'center', INK); cx.globalAlpha = 1; }
+    // ラウンドの まる
+    api.members.forEach((p, i) => { const x0 = i ? W * 0.97 : W * 0.03, dir = i ? -1 : 1;
+      D.text(p.name, x0, H * 0.06, H * 0.05, p.color, i ? 'right' : 'left', '#fff');
+      for (let k = 0; k < WIN; k++) { const px = x0 + dir * (H * 0.12 + k * H * 0.065); cx.beginPath(); cx.arc(px, H * 0.06, H * 0.024, 0, Math.PI * 2); cx.fillStyle = k < (G.wins[p.pid] || 0) ? p.color : '#fff'; cx.fill(); cx.lineWidth = 3; cx.strokeStyle = INK; cx.stroke(); } });
+    D.text('ラウンド ' + G.round, W / 2, H * 0.06, H * 0.05, '#fff', 'center', INK);
+    D.text('あいての きる せんと ✕ に なるように かまえて ガード', W / 2, H * 0.12, H * 0.03, '#fff', 'center', INK);
+    if (G.phase === 'roundEnd') { const w = api.members.find(m => m.pid === G.roundWin); D.text(w ? w.name + ' の ラウンド！' : '', W / 2, H * 0.45, H * 0.1, '#ffe680', 'center', INK); }
   }
-  window.__game = api; window.__end = () => { const p = api.members[0]; if (p) { G.f[p.pid].pts = WIN; G.winner = p.pid; G.endT = 5; } };
+  window.__game = api; window.__end = () => { const p = api.members[0]; if (p) { G.wins[p.pid] = WIN; G.roundWin = p.pid; G.phase = 'roundEnd'; G.pt = 9; } };
 }
 </script>
 </body>

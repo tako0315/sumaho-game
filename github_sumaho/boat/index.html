@@ -9,10 +9,12 @@
   ・1P と 2P で 1そう（1P＝ひだりの オール、2P＝みぎの オール）。3P と 4P で もう 1そう → レース
   ・スマホを オールの ように まえから うしろへ ぐいっと ふると こぐ
   ・ひだりだけ こぐと みぎへ、みぎだけ こぐと ひだりへ まがる。ふたり いっしょに こぐと「シンクロ！」で はやい
+  ・モニターは 3D（three.js）。カメラが せんとうの ボートを おいかける
   ・スマホを よこに かたむけると かじ（すこし まがる）。ひとりの ときは ひだりも みぎも ひとりで こぐ
 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 /* PAD きょうつう: モニターは キャンバス 1まい、スマホは #pad の なか */
 :root{--ink:#3a2328;--paper:#fffaf0;--ok:#2f9e5b;--blue:#4a9fe0;--me:#3a2328;--head:#3a2328}
@@ -45,6 +47,8 @@ button.sub:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
 .small{font-size:14px;color:#7a6a60;text-align:center;line-height:1.5}
 #conn{text-align:center;padding:40px 16px;font-size:20px;line-height:1.6}
 [hidden]{display:none!important}
+canvas#gl{display:block;position:fixed;inset:0;width:100%;height:100%}
+body.pad #gl{display:none}
 
 :root{--head:#2a6f9e}
 #side{font-size:32px;font-weight:bold;text-align:center;padding:10px;border:4px solid var(--ink);border-radius:16px;background:var(--me);color:#fff;margin:6px 0}
@@ -55,6 +59,7 @@ button.sub:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
 </style>
 </head>
 <body>
+<canvas id="gl"></canvas>
 <canvas id="cv"></canvas>
 <div id="pad">
   <header><h1>ボート</h1><span id="badge">…</span></header>
@@ -250,7 +255,10 @@ const PAD = (() => {
       g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
     }
-    addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
+    for (const ev of ['pointerdown', 'keydown', 'touchstart', 'mousedown', 'click']) addEventListener(ev, unlock, true);
+    // モニターは ひらいた とたんに おとを ためす。ブラウザが ゆるしていれば（じどうさいせい OK の せってい）そのまま なる。
+    // だめでも 1びょうごとに ためしつづける
+    if (!ROOM) { unlock(); const iv = setInterval(() => { unlock(); if (ok()) clearInterval(iv); }, 1000); }
     return {
       unlock, ok, noise, tone,
       join() { tone({ f0: 660, dur: 0.12 }); tone({ f0: 990, dur: 0.22, delay: 0.1 }); },
@@ -348,6 +356,34 @@ const PAD = (() => {
     let ready = false; addEventListener('resize', fit); fit(); ready = true; return { cx, S };
   }
   function loop(f) { let last = performance.now(); const tick = now => { const dt = Math.min(0.05, (now - last) / 1000); last = now; f(dt); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }  // さいしょも つぎの フレームから（ゲームの へんすうが できてから）
+
+  /* ---------- モニター: 3D（three.js）。#gl キャンバスに かく。2D の #cv は うえに かさねて もじ・パネル用 ----------
+     たいらな いろ（トゥーン）＋ こい ふちどり で、ほかの ゲームの えと そろえる */
+  function gl(opt = {}) {
+    const el = document.getElementById('gl');
+    const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true });
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+    if (opt.shadow) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(opt.bg || '#efe3cc');
+    const camera = new THREE.PerspectiveCamera(opt.fov || 45, 1, 0.1, 500);
+    const grad = new THREE.DataTexture(new Uint8Array([150, 150, 150, 255, 255, 255, 255, 255]), 2, 1, THREE.RGBAFormat);  // 2だんかいの かげ
+    grad.minFilter = grad.magFilter = THREE.NearestFilter; grad.needsUpdate = true;
+    const mats = {};
+    const toon = c => mats[c] || (mats[c] = new THREE.MeshToonMaterial({ color: c, gradientMap: grad }));
+    const inkMat = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
+    // ふちどり: うらがえしの すこし おおきい くろい かたち
+    function outline(mesh, w = 0.05) { const o = new THREE.Mesh(mesh.geometry, inkMat); o.scale.setScalar(1 + w); mesh.add(o); return mesh; }
+    function mesh(geo, color, { ink = 0.05, cast = true, recv = false } = {}) { const m = new THREE.Mesh(geo, toon(color)); m.castShadow = cast; m.receiveShadow = recv; if (ink) outline(m, ink); return m; }
+    scene.add(new THREE.AmbientLight(0xffffff, 0.48));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.62); sun.position.set(4, 10, 6); scene.add(sun); scene.add(sun.target);
+    if (opt.shadow) { sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); const c = sun.shadow.camera; c.left = c.bottom = -20; c.right = c.top = 20; c.near = 0.5; c.far = 60; }
+    function fit() { const W = innerWidth, H = innerHeight; renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix(); }
+    addEventListener('resize', fit); fit();
+    // 3D の いち → がめんの いち（2D の もじを かさねる ため）
+    const v = new THREE.Vector3();
+    function toScreen(x, y, z) { v.set(x, y, z).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight, v.z < 1]; }
+    return { THREE, renderer, scene, camera, sun, toon, outline, mesh, inkMat, toScreen, render: () => renderer.render(scene, camera) };
+  }
 
   /* ---------- モニター: ゲームの ながれ（ロビー → 3・2・1 → プレイ → けっか） ----------
      spec: { id, title, sub, min, max, bg, init(members), update(dt), draw(), onData(p, d), stateFor(p), onKey(e), resize(W, H) }
@@ -450,7 +486,7 @@ const PAD = (() => {
     return Object.assign(P, { net, send: o => net.send(o), render, me: net.me });
   }
 
-  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone };
+  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone, gl };
 })();
 
 </script>
@@ -525,7 +561,7 @@ function startMonitor() {
       }
     },
     draw() { drawScene(); },
-    bg(W, H) { cx.fillStyle = '#7cc46a'; cx.fillRect(0, 0, W, H); },
+    bg(W, H) { if (api.st === 'lobby') { if (built !== G && G.boats) build3D(); V.camera.position.set(Math.sin(api.t * 0.2) * 4, 9, 6); V.camera.lookAt(0, 0, -8); V.render(); } },  // 3D は #gl に かく
     onKey(e, down) { if (!down || !G.boats || !api.members[0].kb) return; const b = G.boats[0]; if (e.code === 'KeyA' || e.code === 'ArrowLeft') row(b, 'L', 22); if (e.code === 'KeyD' || e.code === 'ArrowRight') row(b, 'R', 22); if (e.code === 'Space') { row(b, 'L', 22); row(b, 'R', 22); } },
   });
   const cx = api.cx, D = api.D, S = api.S, INK = PAD.INK;
@@ -544,37 +580,72 @@ function startMonitor() {
     PAD.sfx.noise({ dur: 0.3, f0: 700, f1: 250, type: 'lowpass', vol: 0.25 });
     for (const q of b.crew) api.room.send(q.pid, { t: 'beat', s: side });
   }
-  function drawScene() {
-    const W = S.W, H = S.H, k = H / 900;
-    const lead = Math.max(...G.boats.map(b => b.y)), camY = lead - H * 0.35 / k;   // せかいの y（うえへ すすむ）
-    const sy = y => H - (y - camY) * k, sx = x => W / 2 + x * W * 0.9;
-    // かわ
-    cx.fillStyle = '#4aa3d8'; cx.beginPath();
-    for (let py = 0; py <= H; py += 10) { const y = camY + (H - py) / k; cx.lineTo(sx(-riverHalf(y)), py); }
-    for (let py = H; py >= 0; py -= 10) { const y = camY + (H - py) / k; cx.lineTo(sx(riverHalf(y)), py); }
-    cx.closePath(); cx.fill(); cx.lineWidth = 5; cx.strokeStyle = '#2d6f45'; cx.stroke();
-    cx.strokeStyle = 'rgba(255,255,255,.35)'; cx.lineWidth = 3;
-    for (let y = Math.floor(camY / 160) * 160; y < camY + H / k; y += 160) { const px = sx(Math.sin(y * 0.37) * 0.25), py = sy(y); cx.beginPath(); cx.moveTo(px - 20, py); cx.quadraticCurveTo(px, py - 8, px + 20, py); cx.stroke(); }
+  // ---- 3D ----
+  // せかい: よこ X = b.x * 14、まえ Z = −b.y / 100（まえへ すすむほど Z が マイナス）
+  const V = PAD.gl({ bg: '#bfe6f5', shadow: false, fov: 50 }), T3 = THREE;
+  const world = new T3.Group(); V.scene.add(world);
+  const ground = V.mesh(new T3.PlaneGeometry(400, 400), '#7cc46a', { ink: 0, cast: false }); ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.02, -40); V.scene.add(ground);
+  const toX = x => x * 14, toZ = y => -y / 100;
+  let built = null, boatG = new Map(), ripples = [];
+  function checkerTex() { const c = document.createElement('canvas'); c.width = 256; c.height = 64; const g = c.getContext('2d'); for (let i = 0; i < 16; i++) for (let j = 0; j < 4; j++) { g.fillStyle = (i + j) % 2 ? '#ffffff' : '#3a2328'; g.fillRect(i * 16, j * 16, 16, 16); } const t = new T3.CanvasTexture(c); return t; }
+  function build3D() {
+    while (world.children.length) world.remove(world.children[0]);
+    boatG.clear(); ripples = []; built = G;
+    // かわ（きしに そった リボン）
+    const N = Math.ceil(LEN / 100) + 30, pos = [], idx = [];
+    for (let i = 0; i <= N; i++) { const y = (i - 10) * 100, h = riverHalf(y) * 14; pos.push(-h, 0, toZ(y), h, 0, toZ(y)); if (i < N) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } }
+    const rg = new T3.BufferGeometry(); rg.setAttribute('position', new T3.Float32BufferAttribute(pos, 3)); rg.setIndex(idx); rg.computeVertexNormals();
+    world.add(new T3.Mesh(rg, V.toon('#4aa3d8')));
+    for (const side of [-1, 1]) { const pts = []; for (let i = 0; i <= N; i++) { const y = (i - 10) * 100; pts.push(new T3.Vector3(side * riverHalf(y) * 14, 0.03, toZ(y))); } world.add(new T3.Line(new T3.BufferGeometry().setFromPoints(pts), new T3.LineBasicMaterial({ color: '#2d6f45' }))); }
+    // き（インスタンス）
+    const nT = 220, cone = new T3.InstancedMesh(new T3.ConeGeometry(0.9, 2.2, 7), V.toon('#3f8f4a'), nT), trunk = new T3.InstancedMesh(new T3.CylinderGeometry(0.18, 0.22, 0.8, 6), V.toon('#7a4a2a'), nT);
+    const M4 = new T3.Matrix4();
+    for (let i = 0; i < nT; i++) { const y = (i / nT) * (LEN + 2000) - 1000, side = i % 2 ? 1 : -1, x = side * (riverHalf(y) * 14 + 1.5 + Math.random() * 6), z = toZ(y), s = 0.8 + Math.random() * 0.6;
+      M4.compose(new T3.Vector3(x, 1.5 * s, z), new T3.Quaternion(), new T3.Vector3(s, s, s)); cone.setMatrixAt(i, M4); M4.compose(new T3.Vector3(x, 0.4 * s, z), new T3.Quaternion(), new T3.Vector3(s, s, s)); trunk.setMatrixAt(i, M4); }
+    world.add(cone); world.add(trunk);
+    // いわ
+    for (const r of G.rocks) { const m = V.mesh(new T3.DodecahedronGeometry(r.r / 100 * 1.1, 0), '#8a8580', { ink: 0.06 }); m.position.set(toX(r.x), 0.05, toZ(r.y)); m.rotation.set(Math.random(), Math.random(), 0); m.scale.y = 0.7; world.add(m); }
     // ゴール
-    const gy = sy(LEN); if (gy > -40 && gy < H + 40) { for (let x = sx(-0.5); x < sx(0.5); x += 20) for (let r = 0; r < 2; r++) { cx.fillStyle = ((x / 20 | 0) + r) % 2 ? '#fff' : INK; cx.fillRect(x, gy + r * 20 - 20, 20, 20); } D.text('ゴール', W / 2, gy - 40, H * 0.05, '#fff', 'center', INK); }
-    for (const r of G.rocks) { const py = sy(r.y); if (py < -100 || py > H + 100) continue; const px = sx(r.x), rr = r.r * k; cx.fillStyle = '#8a8580'; cx.beginPath(); cx.ellipse(px, py, rr, rr * 0.8, 0, 0, Math.PI * 2); cx.fill(); cx.lineWidth = 4; cx.strokeStyle = INK; cx.stroke(); cx.fillStyle = '#a9a39d'; cx.beginPath(); cx.ellipse(px - rr * 0.25, py - rr * 0.25, rr * 0.35, rr * 0.25, 0, 0, Math.PI * 2); cx.fill(); }
-    for (const q of G.ripples) { cx.globalAlpha = 1 - q.t / 1.2; cx.strokeStyle = '#fff'; cx.lineWidth = 2; cx.beginPath(); cx.ellipse(sx(q.x), sy(q.y), 10 + q.t * 30, 4 + q.t * 10, 0, 0, Math.PI * 2); cx.stroke(); cx.globalAlpha = 1; }
+    const gz = toZ(LEN);
+    for (const s of [-1, 1]) { const pole = V.mesh(new T3.CylinderGeometry(0.12, 0.12, 4, 8), '#ffffff', { ink: 0.1 }); pole.position.set(s * (riverHalf(LEN) * 14 + 0.3), 2, gz); world.add(pole); }
+    const ban = new T3.Mesh(new T3.PlaneGeometry(riverHalf(LEN) * 28 + 0.6, 1), new T3.MeshBasicMaterial({ map: checkerTex(), side: T3.DoubleSide })); ban.position.set(0, 3.5, gz); world.add(ban);
     // ボート
     for (const b of G.boats) {
-      const px = sx(b.x), behind = sy(b.y) > H - 70 * k, py = Math.min(H - 70 * k, sy(b.y)), L = 120 * k, Wd = 42 * k;  // おくれた ボートは したの はしに
-      cx.save(); cx.translate(px, py); cx.rotate(b.a);
-      for (const s of ['L', 'R']) { const dir = s === 'L' ? -1 : 1, sw = b.oar[s]; cx.save(); cx.translate(dir * Wd * 0.4, 0); cx.rotate(dir * (-0.5 + sw * 1.1)); cx.strokeStyle = INK; cx.lineWidth = 6; cx.beginPath(); cx.moveTo(0, 0); cx.lineTo(dir * 70 * k, 0); cx.stroke(); cx.fillStyle = '#d9a46a'; cx.beginPath(); cx.ellipse(dir * 72 * k, 0, 16 * k, 7 * k, 0, 0, Math.PI * 2); cx.fill(); cx.lineWidth = 3; cx.stroke(); cx.restore(); }
-      cx.fillStyle = '#c98a4a'; cx.beginPath(); cx.moveTo(0, -L * 0.55); cx.quadraticCurveTo(Wd, -L * 0.2, Wd * 0.8, L * 0.45); cx.lineTo(-Wd * 0.8, L * 0.45); cx.quadraticCurveTo(-Wd, -L * 0.2, 0, -L * 0.55); cx.fill(); cx.lineWidth = 4; cx.strokeStyle = INK; cx.stroke();
-      cx.fillStyle = b.color; cx.beginPath(); cx.arc(-Wd * 0.3, 0, Wd * 0.3, 0, Math.PI * 2); cx.fill(); cx.stroke();
-      cx.fillStyle = b.color2; cx.beginPath(); cx.arc(Wd * 0.3, 0, Wd * 0.3, 0, Math.PI * 2); cx.fill(); cx.stroke();
-      if (b.sync > 0) { cx.strokeStyle = '#ffd23f'; cx.lineWidth = 5; cx.beginPath(); cx.moveTo(-Wd * 0.6, L * 0.6); cx.lineTo(-Wd, L * 0.9); cx.moveTo(Wd * 0.6, L * 0.6); cx.lineTo(Wd, L * 0.9); cx.stroke(); }
-      cx.restore();
-      D.text(b.crew.map(p => p.name).join('・'), px, py + 70 * k, H * 0.03, '#fff', 'center', INK);
-      if (b.done) D.text('ゴール！', px, py - 90 * k, H * 0.05, '#ffd23f', 'center', INK);
-      if (behind && !b.done) D.text('おいつけ！', px, py - 80 * k, H * 0.035, '#fff', 'center', INK);
+      const g = new T3.Group();
+      const hullShape = new T3.Shape(); hullShape.moveTo(0, -0.7); hullShape.quadraticCurveTo(0.42, -0.3, 0.36, 0.55); hullShape.lineTo(-0.36, 0.55); hullShape.quadraticCurveTo(-0.42, -0.3, 0, -0.7);
+      const hull = V.mesh(new T3.ExtrudeGeometry(hullShape, { depth: 0.28, bevelEnabled: false }), '#c98a4a', { ink: 0.06 }); hull.rotation.x = Math.PI / 2; hull.position.y = 0.3; g.add(hull);
+      const p1 = V.mesh(new T3.SphereGeometry(0.17, 16, 12), b.color, { ink: 0.1 }); p1.position.set(-0.15, 0.48, 0.05); g.add(p1);
+      const p2 = V.mesh(new T3.SphereGeometry(0.17, 16, 12), b.color2, { ink: 0.1 }); p2.position.set(0.15, 0.48, 0.05); g.add(p2);
+      const oars = {};
+      for (const s of ['L', 'R']) { const dir = s === 'L' ? -1 : 1, piv = new T3.Group(); piv.position.set(dir * 0.3, 0.35, 0); const shaft = V.mesh(new T3.CylinderGeometry(0.03, 0.03, 1.0, 6), '#7a4a2a', { ink: 0 }); shaft.rotation.z = Math.PI / 2; shaft.position.x = dir * 0.5; piv.add(shaft);
+        const blade = V.mesh(new T3.BoxGeometry(0.28, 0.03, 0.14), '#d9a46a', { ink: 0.15 }); blade.position.set(dir * 0.98, 0, 0); piv.add(blade); g.add(piv); oars[s] = piv; }
+      world.add(g); boatG.set(b, { g, oars });
     }
-    for (const q of G.pops) { const u = q.t / 0.9; cx.globalAlpha = 1 - u * u; D.text(q.txt, sx(q.b.x), Math.min(H - 70 * k, sy(q.b.y)) - 100 * k - u * 40, H * (q.good ? 0.055 : 0.045), q.good ? '#ffd23f' : '#fff', 'center', INK); cx.globalAlpha = 1; }
-    // しんちょく
+  }
+  function ripple(x, z) { const m = new T3.Mesh(new T3.RingGeometry(0.2, 0.28, 24), new T3.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8 })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.04, z); world.add(m); ripples.push({ m, t: 0 }); }
+  function drawScene() {
+    const W = S.W, H = S.H;
+    if (built !== G) build3D();
+    const lead = G.boats.reduce((a, b) => b.y > a.y ? b : a, G.boats[0]);
+    for (const b of G.boats) {
+      const o = boatG.get(b); if (!o) continue;
+      o.g.position.set(toX(b.x), Math.sin(api.t * 3 + b.y) * 0.03, toZ(b.y)); o.g.rotation.y = -b.a; o.g.rotation.z = Math.sin(api.t * 2) * 0.03;
+      for (const s of ['L', 'R']) { const dir = s === 'L' ? -1 : 1, sw = b.oar[s]; o.oars[s].rotation.y = dir * (-0.6 + sw * 1.2); o.oars[s].rotation.z = dir * (sw > 0.2 ? 0.05 : -0.25); }
+      if (b.v > 150 && Math.random() < 0.06) ripple(toX(b.x) + (Math.random() - 0.5) * 0.6, toZ(b.y) + 0.8);
+    }
+    for (const r of ripples) { r.t += 1 / 60; r.m.scale.setScalar(1 + r.t * 3); r.m.material.opacity = Math.max(0, 0.8 - r.t * 0.7); }
+    ripples = ripples.filter(r => { if (r.t > 1.2) { world.remove(r.m); return false; } return true; });
+    const cxp = toX(lead.x) * 0.6, cz = toZ(lead.y);
+    V.camera.position.set(cxp, 7.5, cz + 8.5); V.camera.lookAt(cxp, 0, cz - 6);
+    V.render();
+    cx.clearRect(0, 0, W, H);
+    // 2D: なまえ・ふきだし
+    for (const b of G.boats) {
+      const [x, y, vis] = V.toScreen(toX(b.x), 1.3, toZ(b.y));
+      if (vis && y < H) { D.text(b.crew.map(p => p.name).join('・'), x, y, H * 0.032, '#fff', 'center', INK); if (b.done) D.text('ゴール！', x, y - H * 0.06, H * 0.05, '#ffd23f', 'center', INK); }
+      else if (!b.done) { const [bx] = V.toScreen(toX(b.x), 0, cz + 4); D.text('↓ ' + b.crew.map(p => p.name).join('・') + ' おいつけ！', Math.max(120, Math.min(W - 120, bx)), H - 80, H * 0.035, b.color, 'center', '#fff'); }
+    }
+    for (const q of G.pops) { const u = q.t / 0.9, [x, y] = V.toScreen(toX(q.b.x), 2, toZ(q.b.y)); cx.globalAlpha = 1 - u * u; D.text(q.txt, x, y - u * 40, H * (q.good ? 0.055 : 0.045), q.good ? '#ffd23f' : '#fff', 'center', INK); cx.globalAlpha = 1; }
     const bh = H * 0.7, bx = W - 40, by = H * 0.15; cx.fillStyle = '#fff'; D.rr(bx - 8, by, 16, bh, 8); cx.fill(); cx.lineWidth = 3; cx.strokeStyle = INK; cx.stroke();
     for (const b of G.boats) { const u = Math.min(1, b.y / LEN); cx.fillStyle = b.color; cx.beginPath(); cx.arc(bx, by + bh * (1 - u), 13, 0, Math.PI * 2); cx.fill(); cx.stroke(); }
     D.text('ゴール', bx, by - 18, H * 0.028, '#fff', 'center', INK);

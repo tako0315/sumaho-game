@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>かたむけて そそげ</title>
+<title>こぼれる ギリギリ</title>
 <!--
-  かたむけて そそげ（1〜4にん）
-  ・スマホを ボトルに みたてて たてに もち、かたむけると モニターの グラスに のみものが はいる
-  ・せんの ところで「できた！」。ぴったりほど こうとくてん。あふれたら 0てん
-  ・3かい: ジュース → ぴったり → カクテル（2しょく かさねる）
+  こぼれる ギリギリ（かたむけて そそげ・1〜4にん）
+  ・スマホを ボトルに みたてて たてに もち、かたむけると そそぎ はじめる
+  ・いちど そそぎ はじめたら いきおいは かえられない。もどすと とまる（そそげるのは 1かいだけ）
+  ・とめても すこし おくれて でてくる。コップから こぼれる ギリギリを ねらえ！ こぼれたら 0てん
+  ・3かい: ジュース → ほそい グラス（はやい）→ ソーダ（あわが ふくらむ）
 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
@@ -44,33 +45,35 @@ button.sub:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
 .small{font-size:14px;color:#7a6a60;text-align:center;line-height:1.5}
 #conn{text-align:center;padding:40px 16px;font-size:20px;line-height:1.6}
 [hidden]{display:none!important}
+canvas#gl{display:block;position:fixed;inset:0;width:100%;height:100%}
+body.pad #gl{display:none}
 
 :root{--head:#2e6f8e}
 #bottle{display:block;margin:4px auto}
-#done{background:#e5484d;font-size:30px;padding:22px 0}
+#stop{background:#e5484d;font-size:30px;padding:22px 0}
 #slider{width:100%;margin:8px 0 14px}
 </style>
 </head>
 <body>
 <canvas id="cv"></canvas>
 <div id="pad">
-  <header><h1>かたむけて そそげ</h1><span id="badge">…</span></header>
+  <header><h1>こぼれる ギリギリ</h1><span id="badge">…</span></header>
   <main>
     <div id="conn">モニターに つないでいます…</div>
     <div id="app" hidden>
       <div class="card"><div class="msg" id="msg"></div><div class="small" id="sub"></div><canvas id="bottle" width="160" height="160"></canvas></div>
       <button class="big" id="ready">じゅんび OK！</button>
       <div id="hostbox" hidden><button class="big" id="start">スタート</button><button class="big" id="back" style="background:#7a6a60">ロビーへ</button></div>
-      <button class="big" id="done" hidden>できた！</button>
-      <div id="sliderbox" hidden><div class="small">センサーが うごかない ときは これで かたむける</div><input type="range" id="slider" min="0" max="180" value="0"></div>
+      <button class="big" id="stop" hidden>とめる！</button>
+      <div id="sliderbox" hidden><div class="small">センサーが うごかない ときは これを みぎへ うごかすと そそぐ</div><input type="range" id="slider" min="0" max="180" value="0"></div>
       <div class="card">
         <h2>あそびかた</h2>
         <ol class="how">
           <li>スマホを たてに もつ（これが ボトル）</li>
-          <li>ゆっくり かたむけると、モニターの グラスに そそげる。たくさん かたむけるほど いきおいよく でる</li>
-          <li>グラスの せんの ところで、まっすぐに もどして「できた！」</li>
-          <li>ぴったりほど こうとくてん。あふれたら 0てん</li>
-          <li>さいごは カクテル。1しょくめで「できた！」、2しょくめも そそいで「できた！」</li>
+          <li>かたむけると そそぎ はじめる。いきおいは かえられない！</li>
+          <li>まっすぐに もどすか「とめる！」で ストップ。そそげるのは 1かいだけ</li>
+          <li>とめても すこし おくれて でてくるよ。コップの ふちギリギリを ねらおう</li>
+          <li>こぼれたら 0てん。ソーダは あわが ふくらむので ちゅうい！</li>
         </ol>
       </div>
     </div>
@@ -248,7 +251,10 @@ const PAD = (() => {
       g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
     }
-    addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
+    for (const ev of ['pointerdown', 'keydown', 'touchstart', 'mousedown', 'click']) addEventListener(ev, unlock, true);
+    // モニターは ひらいた とたんに おとを ためす。ブラウザが ゆるしていれば（じどうさいせい OK の せってい）そのまま なる。
+    // だめでも 1びょうごとに ためしつづける
+    if (!ROOM) { unlock(); const iv = setInterval(() => { unlock(); if (ok()) clearInterval(iv); }, 1000); }
     return {
       unlock, ok, noise, tone,
       join() { tone({ f0: 660, dur: 0.12 }); tone({ f0: 990, dur: 0.22, delay: 0.1 }); },
@@ -346,6 +352,34 @@ const PAD = (() => {
     let ready = false; addEventListener('resize', fit); fit(); ready = true; return { cx, S };
   }
   function loop(f) { let last = performance.now(); const tick = now => { const dt = Math.min(0.05, (now - last) / 1000); last = now; f(dt); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }  // さいしょも つぎの フレームから（ゲームの へんすうが できてから）
+
+  /* ---------- モニター: 3D（three.js）。#gl キャンバスに かく。2D の #cv は うえに かさねて もじ・パネル用 ----------
+     たいらな いろ（トゥーン）＋ こい ふちどり で、ほかの ゲームの えと そろえる */
+  function gl(opt = {}) {
+    const el = document.getElementById('gl');
+    const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true });
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+    if (opt.shadow) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(opt.bg || '#efe3cc');
+    const camera = new THREE.PerspectiveCamera(opt.fov || 45, 1, 0.1, 500);
+    const grad = new THREE.DataTexture(new Uint8Array([150, 150, 150, 255, 255, 255, 255, 255]), 2, 1, THREE.RGBAFormat);  // 2だんかいの かげ
+    grad.minFilter = grad.magFilter = THREE.NearestFilter; grad.needsUpdate = true;
+    const mats = {};
+    const toon = c => mats[c] || (mats[c] = new THREE.MeshToonMaterial({ color: c, gradientMap: grad }));
+    const inkMat = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
+    // ふちどり: うらがえしの すこし おおきい くろい かたち
+    function outline(mesh, w = 0.05) { const o = new THREE.Mesh(mesh.geometry, inkMat); o.scale.setScalar(1 + w); mesh.add(o); return mesh; }
+    function mesh(geo, color, { ink = 0.05, cast = true, recv = false } = {}) { const m = new THREE.Mesh(geo, toon(color)); m.castShadow = cast; m.receiveShadow = recv; if (ink) outline(m, ink); return m; }
+    scene.add(new THREE.AmbientLight(0xffffff, 0.48));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.62); sun.position.set(4, 10, 6); scene.add(sun); scene.add(sun.target);
+    if (opt.shadow) { sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); const c = sun.shadow.camera; c.left = c.bottom = -20; c.right = c.top = 20; c.near = 0.5; c.far = 60; }
+    function fit() { const W = innerWidth, H = innerHeight; renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix(); }
+    addEventListener('resize', fit); fit();
+    // 3D の いち → がめんの いち（2D の もじを かさねる ため）
+    const v = new THREE.Vector3();
+    function toScreen(x, y, z) { v.set(x, y, z).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight, v.z < 1]; }
+    return { THREE, renderer, scene, camera, sun, toon, outline, mesh, inkMat, toScreen, render: () => renderer.render(scene, camera) };
+  }
 
   /* ---------- モニター: ゲームの ながれ（ロビー → 3・2・1 → プレイ → けっか） ----------
      spec: { id, title, sub, min, max, bg, init(members), update(dt), draw(), onData(p, d), stateFor(p), onKey(e), resize(W, H) }
@@ -448,37 +482,33 @@ const PAD = (() => {
     return Object.assign(P, { net, send: o => net.send(o), render, me: net.me });
   }
 
-  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone };
+  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone, gl };
 })();
 
 </script>
 <script>
 'use strict';
 const GAME_ID = 'pour';
-// 1かいごとの ざいりょう（target は グラスの なんパーセントまで）
-function makeRounds() {
-  const r = (a, b) => Math.round(a + Math.random() * (b - a));
-  const t1 = r(25, 38), t2 = t1 + r(28, 40);
-  return [
-    { name: 'オレンジジュース', items: [{ name: 'オレンジ', color: '#f7a32b', target: 60 }] },
-    { name: 'メロンソーダ', items: [{ name: 'メロン', color: '#5cc46a', target: r(35, 82) }] },
-    { name: 'カクテル', items: [{ name: 'いちご', color: '#e5484d', target: t1 }, { name: 'ソーダ', color: '#6fb3e8', target: t2 }] },
-  ];
-}
+const START_ANG = 70, STOP_ANG = 45;   // この かくど いじょうで そそぎ はじめ、これより もどすと とまる
+// shape: cup（ふつう）/ tall（ほそながい）/ wide（ひろい）。rate は 1びょうで ふえる パーセント
+const ROUNDS = [
+  { name: 'オレンジジュース', color: '#f7a32b', shape: 'cup', rate: 24, foam: 0 },
+  { name: 'ぶどうジュース', color: '#8e4fc4', shape: 'tall', rate: 36, foam: 0 },
+  { name: 'ソーダ', color: '#6fb3e8', shape: 'wide', rate: 28, foam: 1 },
+];
 if (PAD.isPad) startPad(); else startMonitor();
 
 function startPad() {
   const $ = id => document.getElementById(id), S = PAD.sensors;
   let ang = 0, sgn = 0, lastMot = 0, gx = 0, gy = 9.8;
   const P = PAD.phone({ id: GAME_ID, msgs: { count: 'スマホを たてに もってね' }, onState: d => {
-    $('done').hidden = !(d.st === 'play' && d.pouring);
+    $('stop').hidden = !(d.st === 'play' && d.pouring);
     $('sliderbox').hidden = !(d.st === 'play' || d.st === 'count') || performance.now() - lastMot < 1500;
   } });
-  // まっすぐ（たて）の ときの じゅうりょくの むきを おぼえる（iPhone と Android で むきが ぎゃく）
   const cal0 = S.calibrate; S.calibrate = () => { cal0(); if (performance.now() - lastMot < 1000) sgn = Math.sign(gy) || 1; };
   S.on('motion', e => { const g = e.accelerationIncludingGravity; if (!g || g.x == null) return; gx += (g.x - gx) * 0.3; gy += (g.y - gy) * 0.3; lastMot = performance.now(); if (!sgn) sgn = Math.sign(gy) || 1;
     ang = Math.atan2(Math.abs(gx), gy * sgn) * 180 / Math.PI; });
-  $('done').onclick = () => { PAD.sfx.tap(); P.send({ t: 'done' }); };
+  $('stop').onclick = () => { PAD.sfx.tap(); P.send({ t: 'stop' }); $('slider').value = 0; };
   const bc = $('bottle'), bx = bc.getContext('2d');
   let t0 = 0;
   (function frame(now) {
@@ -494,99 +524,105 @@ function startPad() {
 function startMonitor() {
   let G = {}; const ang = {};
   const api = PAD.game({
-    id: GAME_ID, title: 'かたむけて そそげ', sub: 'スマホを ボトルに して、グラスに ぴったり そそごう（1〜4にん）', keyboard: true, countMsg: 'スマホを たてに もってね',
-    init(members) {
-      G = { rounds: makeRounds(), round: 0, phase: 'pour', pt: 0, total: {}, pl: {} };
-      for (const p of members) { G.total[p.pid] = 0; ang[p.pid] = 0; }
-      startRound();
-    },
-    onData(p, d) {
-      if (d.t === 'ang') ang[p.pid] = +d.a || 0;
-      else if (d.t === 'done') finishItem(p.pid);
-    },
+    id: GAME_ID, title: 'こぼれる ギリギリ', sub: 'いちどだけ そそいで、コップの ふちギリギリで とめろ！（1〜4にん）', keyboard: true, countMsg: 'スマホを たてに もってね',
+    init(members) { G = { round: 0, phase: 'pour', pt: 0, total: {}, pl: {} }; for (const p of members) { G.total[p.pid] = 0; ang[p.pid] = 0; } startRound(); },
+    onData(p, d) { if (d.t === 'ang') ang[p.pid] = +d.a || 0; else if (d.t === 'stop') stop(p.pid); },
     stateFor(p) {
       const s = G.pl && G.pl[p.pid]; if (!s) return {};
       if (api.st === 'final') { const r = ranking().find(r => r.pid === p.pid); return { msg: r ? (r.place === 1 ? 'ゆうしょう！' : r.place + 'い') + ' ' + r.pts + 'てん' : '' }; }
-      const R = G.rounds[G.round], it = R.items[s.idx];
-      if (G.phase === 'show') return { msg: s.score + 'てん！', sub: 'つぎを まってね', pouring: false };
-      if (s.locked) return { msg: 'できた！', sub: 'ほかの ひとを まってね', pouring: false };
-      return { msg: it.name + 'を そそげ！', sub: 'せんまで いれたら「できた！」' + (R.items.length > 1 ? '（' + (s.idx + 1) + '/' + R.items.length + 'しょくめ）' : ''), pouring: true };
+      if (G.phase === 'show') return { msg: s.over ? 'こぼれた… 0てん' : s.score + 'てん！', sub: 'つぎを まってね', pouring: false };
+      if (s.state === 'wait') return { msg: 'かたむけて そそげ！', sub: 'いちど はじめたら いきおいは かえられないよ', pouring: false };
+      if (s.state === 'pour') return { msg: 'そそいでる…！', sub: 'もどすか「とめる！」で ストップ', pouring: true };
+      return { msg: s.over ? 'こぼれた…' : 'ストップ！', sub: 'ほかの ひとを まってね', pouring: false };
     },
     update(dt) {
-      G.pt += dt;
+      G.pt += dt; const R = ROUNDS[G.round];
       if (G.phase === 'pour') {
         for (const p of api.members) {
-          const s = G.pl[p.pid]; if (s.locked) continue;
-          const a = p.kb ? kbAng : ang[p.pid] || 0, rate = Math.pow(Math.max(0, Math.min(1, (a - 65) / 75)), 1.4) * 40;
-          s.flow = rate; s.ang = a;
-          if (rate > 0) { s.amt[s.idx] += rate * dt; s.sndT -= dt; if (s.sndT <= 0) { s.sndT = 0.09; PAD.sfx.noise({ dur: 0.12, f0: 500 + s.total() * 12, f1: 400 + s.total() * 12, q: 3, vol: 0.05 + rate / 400 }); } }
-          if (s.total() > 100) { s.over = true; s.locked = true; s.score = 0; s.amt[s.idx] -= s.total() - 100; PAD.sfx.bad(); api.room.send(p.pid, { t: 'vibe', ms: 300 }); api.push(); }
+          const s = G.pl[p.pid], a = p.kb ? kbAng : ang[p.pid] || 0; s.ang = a;
+          if (s.state === 'wait' && a > START_ANG) { s.state = 'pour'; PAD.sfx.tone({ f0: 500, f1: 700, dur: 0.1, vol: 0.12 }); api.push(); }
+          else if (s.state === 'pour' && a < STOP_ANG) stop(p.pid);
+          // ながれ: そそいでいる あいだは いつも おなじ いきおい。とめても 0.35びょう おくれて でる
+          let rate = 0;
+          if (s.state === 'pour') rate = R.rate;
+          else if (s.state === 'tail') { s.tail -= dt; rate = R.rate * Math.max(0, s.tail / 0.35); if (s.tail <= 0) { s.state = 'done'; api.push(); } }
+          s.flow = rate;
+          if (rate > 0) { s.amt += rate * dt; if (R.foam) s.foam = Math.min(30, s.foam + rate * dt * 0.55); s.sndT -= dt; if (s.sndT <= 0) { s.sndT = 0.08; PAD.sfx.noise({ dur: 0.12, f0: 500 + s.amt * 12, f1: 400 + s.amt * 12, q: 3, vol: 0.08 }); } }
+          else if (R.foam && s.foam > 0) s.foam = Math.max(0, s.foam - dt * 6);   // あわが しぼむ
+          if (!s.over && s.amt + s.foam > 100) { s.over = true; s.state = 'done'; PAD.sfx.bad(); PAD.sfx.noise({ dur: 0.5, f0: 900, f1: 300, vol: 0.3 }); api.room.send(p.pid, { t: 'vibe', ms: 300 }); api.push(); }
         }
-        if (G.pt > 25) for (const p of api.members) if (!G.pl[p.pid].locked) finishItem(p.pid, true);
-        if (api.members.every(p => G.pl[p.pid].locked || !api.alive(p))) { G.phase = 'show'; G.pt = 0; for (const p of api.members) G.total[p.pid] += G.pl[p.pid].score; PAD.sfx.good(); api.push(); }
+        if (G.pt > 30) for (const p of api.members) { const s = G.pl[p.pid]; if (s.state === 'wait' || s.state === 'pour') stop(p.pid); }
+        if (api.members.every(p => G.pl[p.pid].state === 'done' || !api.alive(p)) && api.members.every(p => G.pl[p.pid].foam < 1 || G.pl[p.pid].over)) {
+          G.phase = 'show'; G.pt = 0;
+          for (const p of api.members) { const s = G.pl[p.pid]; s.score = s.over ? 0 : Math.round(Math.min(100, s.amt)); G.total[p.pid] += s.score; }
+          const best = Math.max(...api.members.map(p => G.pl[p.pid].score)); best >= 95 ? PAD.sfx.fanfare() : PAD.sfx.good(); api.push();
+        }
       } else if (G.phase === 'show' && G.pt > 3.5) {
-        G.round++; if (G.round >= G.rounds.length) { const r = ranking(); api.finish(D.winTitle(r), r.map(r => ({ color: r.color, a: r.place + 'い  ' + r.name, b: r.pts + 'てん', hi: r.place === 1 }))); }
+        G.round++; if (G.round >= ROUNDS.length) { const r = ranking(); api.finish(D.winTitle(r), r.map(r => ({ color: r.color, a: r.place + 'い  ' + r.name, b: r.pts + 'てん', hi: r.place === 1 }))); }
         else startRound();
       }
     },
     draw() { drawScene(); },
     bg(W, H) { cx.fillStyle = '#f6e7cf'; cx.fillRect(0, 0, W, H); cx.fillStyle = '#c98c5a'; cx.fillRect(0, H * 0.8, W, H * 0.2); cx.fillStyle = '#b37848'; cx.fillRect(0, H * 0.8, W, H * 0.025); },
-    onKey(e, down) { if (e.code === 'Space') kbAng = down ? 130 : 0; if (e.code === 'Enter' && down && api.members[0].kb) finishItem(1); },
+    onKey(e, down) { if (e.code === 'Space') kbAng = down ? 120 : 0; },
   });
   let kbAng = 0;
   const cx = api.cx, D = api.D, S = api.S, INK = PAD.INK;
   const ranking = () => D.rank(api.members.map(p => ({ pid: p.pid, name: p.name, color: p.color, pts: G.total[p.pid] || 0 })));
   function startRound() {
-    G.phase = 'pour'; G.pt = 0; const n = G.rounds[G.round].items.length;
-    for (const p of api.members) G.pl[p.pid] = { idx: 0, amt: new Array(n).fill(0), locked: false, score: 0, scores: [], flow: 0, ang: 0, sndT: 0, over: false, total() { return this.amt.reduce((a, b) => a + b, 0); } };
+    G.phase = 'pour'; G.pt = 0;
+    for (const p of api.members) G.pl[p.pid] = { state: 'wait', amt: 0, foam: 0, flow: 0, ang: 0, tail: 0, sndT: 0, over: false, score: 0 };
     api.room.broadcast({ t: 'calib' }); api.push();
   }
-  function finishItem(pid, timeout) {
-    const s = G.pl[pid]; if (!s || s.locked || G.phase !== 'pour' || api.st !== 'play') return;
-    const R = G.rounds[G.round], it = R.items[s.idx], diff = Math.abs(s.total() - it.target);
-    s.scores.push(Math.max(0, Math.round(100 - diff * 6)));
-    if (s.idx < R.items.length - 1 && !timeout) { s.idx++; PAD.sfx.tap(); }
-    else { s.locked = true; s.score = Math.round(s.scores.reduce((a, b) => a + b, 0) / R.items.length); s.score >= 85 ? PAD.sfx.good() : PAD.sfx.tone({ f0: 660, dur: 0.15 }); api.room.send(pid, { t: 'vibe', ms: 80 }); }
-    api.push();
+  function stop(pid) {
+    const s = G.pl[pid]; if (!s || G.phase !== 'pour') return;
+    if (s.state === 'pour') { s.state = 'tail'; s.tail = 0.35; PAD.sfx.tap(); api.push(); }
+  }
+  // コップの かたち: u（0=そこ〜1=ふち）での はばの はんぶん
+  function glassShape(shape, gw, gh) {
+    if (shape === 'tall') return { w: gw * 0.62, h: gh * 1.25, half: u => gw * 0.62 * (0.42 + 0.08 * u) };
+    if (shape === 'wide') return { w: gw * 1.2, h: gh * 0.75, half: u => gw * 1.2 * (0.36 + 0.14 * u) };
+    return { w: gw, h: gh, half: u => gw * (0.4 + 0.1 * u) };
   }
   function drawScene() {
-    const W = S.W, H = S.H, n = api.members.length, cw = W / n, R = G.rounds[G.round] || G.rounds[G.rounds.length - 1];
-    D.text((Math.min(G.round, G.rounds.length - 1) + 1) + 'かいめ：' + R.name, W / 2, H * 0.06, H * 0.055, '#fff', 'center', INK);
+    const W = S.W, H = S.H, n = api.members.length, cw = W / n, R = ROUNDS[Math.min(G.round, ROUNDS.length - 1)];
+    D.text((Math.min(G.round, ROUNDS.length - 1) + 1) + 'かいめ：' + R.name, W / 2, H * 0.06, H * 0.055, '#fff', 'center', INK);
+    D.text('ふちギリギリで とめろ！ こぼれたら 0てん', W / 2, H * 0.125, H * 0.032, '#7a6a60');
     api.members.forEach((p, i) => {
       const s = G.pl[p.pid]; if (!s) return;
-      const gx = cw * (i + 0.5), gw = Math.min(cw * 0.42, H * 0.22), gh = gw * 1.45, gb = H * 0.8, gt = gb - gh;
-      // グラス（したが すこし せまい）
-      const glass = () => { cx.beginPath(); cx.moveTo(gx - gw / 2, gt); cx.lineTo(gx - gw * 0.4, gb); cx.lineTo(gx + gw * 0.4, gb); cx.lineTo(gx + gw / 2, gt); };
-      cx.save(); glass(); cx.closePath(); cx.fillStyle = 'rgba(255,255,255,0.55)'; cx.fill(); cx.clip();
-      let acc = 0; s.amt.forEach((a, k) => { const y0 = gb - gh * acc / 100, y1 = gb - gh * Math.min(100, acc + a) / 100; cx.fillStyle = R.items[k].color; cx.fillRect(gx - gw, y1, gw * 2, y0 - y1 + 1); acc += a; });
-      if (acc > 0) { cx.fillStyle = 'rgba(255,255,255,.35)'; cx.fillRect(gx - gw, gb - gh * Math.min(100, acc) / 100, gw * 2, 4); }
+      const base = Math.min(cw * 0.42, H * 0.24), g = glassShape(R.shape, base, base * 1.4), gb = H * 0.8, gt = gb - g.h;
+      const path = () => { cx.beginPath(); cx.moveTo(gx - g.half(1), gt); cx.lineTo(gx - g.half(0), gb); cx.lineTo(gx + g.half(0), gb); cx.lineTo(gx + g.half(1), gt); };
+      const gx = cw * (i + 0.5);
+      cx.save(); path(); cx.closePath(); cx.fillStyle = 'rgba(255,255,255,0.6)'; cx.fill(); cx.clip();
+      const lv = gb - g.h * Math.min(100, s.amt) / 100, top = gb - g.h * Math.min(100, s.amt + s.foam) / 100;
+      cx.fillStyle = R.color; cx.fillRect(gx - g.w, lv, g.w * 2, gb - lv + 1);
+      if (s.foam > 0) { cx.fillStyle = '#ffffff'; cx.fillRect(gx - g.w, top, g.w * 2, lv - top); cx.fillStyle = '#e6f3fb'; for (let k = 0; k < 8; k++) { cx.beginPath(); cx.arc(gx - g.w * 0.5 + k * g.w * 0.14, top + 2, 6, 0, Math.PI * 2); cx.fill(); } }
       cx.restore();
-      // せん
-      R.items.forEach((it, k) => { if (k > s.idx && !s.locked) return; const y = gb - gh * it.target / 100; cx.setLineDash([10, 7]); cx.lineWidth = 4; cx.strokeStyle = it.color; cx.beginPath(); cx.moveTo(gx - gw * 0.62, y); cx.lineTo(gx + gw * 0.62, y); cx.stroke(); cx.setLineDash([]);
-        cx.lineWidth = 2; cx.strokeStyle = INK; cx.beginPath(); cx.moveTo(gx + gw * 0.62, y); cx.lineTo(gx + gw * 0.75, y - 10); cx.lineTo(gx + gw * 0.75, y + 10); cx.closePath(); cx.fillStyle = it.color; cx.fill(); cx.stroke(); });
-      cx.lineWidth = 5; cx.strokeStyle = INK; glass(); cx.stroke();
-      // ボトル
-      const cur = R.items[Math.min(s.idx, R.items.length - 1)], a = s.locked ? 0 : (s.ang || 0), bw = gw * 0.42, bh = bw * 2.2;
-      // ボトルの くち（px, py）を じくに まわす。0ど＝たて、90ど＝よこ、180ど＝さかさま
-      const px = gx - gw * 0.1, py = gt - bh * 1.3 - H * 0.02;
-      if (!s.locked && s.flow > 0) { cx.fillStyle = cur.color; cx.globalAlpha = 0.9; const sw = 4 + s.flow * 0.45; cx.fillRect(px - sw / 2, py, sw, gb - gh * Math.min(100, s.total()) / 100 - py); cx.globalAlpha = 1; }
+      // ふちの ギリギリ ゾーン（95〜100%）
+      cx.fillStyle = 'rgba(229,72,77,.25)'; cx.fillRect(gx - g.half(1) - 8, gt, g.half(1) * 2 + 16, g.h * 0.05);
+      cx.lineWidth = 5; cx.strokeStyle = INK; path(); cx.stroke();
+      if (s.over) { cx.fillStyle = R.color; cx.beginPath(); cx.ellipse(gx, gb + 6, g.half(1) * 1.8, 10, 0, 0, Math.PI * 2); cx.fill(); cx.fillRect(gx + g.half(1) - 3, gt, 8, g.h); cx.fillRect(gx - g.half(1) - 5, gt, 8, g.h); }
+      // ボトル（くちを じくに まわす）
+      const a = s.state === 'pour' || s.state === 'tail' ? Math.max(100, s.ang) : Math.min(START_ANG - 5, s.ang), bw = base * 0.42, bh = bw * 2.2;
+      const px = gx - g.half(1) * 0.15, py = gt - bh * 1.15 - H * 0.02;
+      if (s.flow > 0) { cx.fillStyle = R.color; cx.globalAlpha = 0.9; const sw = 4 + s.flow * 0.3; cx.fillRect(px - sw / 2, py, sw, top - py); cx.globalAlpha = 1; }
       cx.save(); cx.translate(px, py); cx.rotate(-Math.min(175, a) * Math.PI / 180);
-      cx.fillStyle = cur.color; cx.strokeStyle = INK; cx.lineWidth = 4;
+      cx.fillStyle = R.color; cx.strokeStyle = INK; cx.lineWidth = 4;
       cx.beginPath(); cx.roundRect(-bw / 2, bh * 0.25, bw, bh, 10); cx.fill(); cx.stroke();
       cx.fillStyle = '#fff'; cx.beginPath(); cx.roundRect(-bw * 0.2, 0, bw * 0.4, bh * 0.3, 4); cx.fill(); cx.stroke();
       cx.fillStyle = 'rgba(255,255,255,.8)'; cx.beginPath(); cx.roundRect(-bw * 0.35, bh * 0.55, bw * 0.7, bh * 0.35, 6); cx.fill();
       cx.restore();
-      // なまえ・てん
       D.panel(gx - cw * 0.4, H * 0.84, cw * 0.8, H * 0.12, p.color);
       const tc = p.color === '#f5c518' ? INK : '#fff';
       D.text(p.name + '  ' + (G.total[p.pid] || 0) + 'てん', gx, H * 0.9, H * 0.045, tc);
-      if (s.over) D.text('あふれた！', gx, gt + gh * 0.35, H * 0.06, '#fff', 'center', INK);
-      else if (G.phase === 'show' || s.locked) D.text(s.score + 'てん', gx, gt + gh * 0.35, H * (G.phase === 'show' ? 0.08 : 0.05), s.score >= 85 ? '#ffd23f' : '#fff', 'center', INK);
-      if (G.phase === 'show' && s.score >= 95) D.text('ぴったり！', gx, gt + gh * 0.55, H * 0.045, '#fff', 'center', INK);
+      const mid = gt + g.h * 0.4;
+      if (s.over) D.text('こぼれた！', gx, mid, H * 0.06, '#fff', 'center', INK);
+      else if (G.phase === 'show') { D.text(s.score + 'てん', gx, mid, H * 0.08, s.score >= 95 ? '#ffd23f' : '#fff', 'center', INK); if (s.score >= 95) D.text('ギリギリ！', gx, mid + H * 0.08, H * 0.045, '#fff', 'center', INK); }
+      else if (s.state === 'wait') D.text('かたむけて！', gx, mid, H * 0.035, '#7a6a60');
+      else if (s.state === 'done') D.text('ストップ', gx, mid, H * 0.04, '#fff', 'center', INK);
     });
-    if (G.phase === 'pour') D.text('のこり ' + Math.max(0, Math.ceil(25 - G.pt)) + 'びょう', W - 20, H * 0.06, H * 0.04, '#fff', 'right', INK);
   }
-  window.__game = api; window.__end = () => { G.round = G.rounds.length - 1; G.phase = 'show'; G.pt = 9; };
+  window.__game = api; window.__end = () => { G.round = ROUNDS.length - 1; G.phase = 'show'; G.pt = 9; };
 }
 </script>
 </body>

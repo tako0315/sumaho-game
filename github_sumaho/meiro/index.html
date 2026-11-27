@@ -9,10 +9,12 @@
   ・スマホを かたむけると、モニターの めいろの たまが ころがる
   ・たいせん: ひとり 1こずつ じぶんの いろの たま。おなじ めいろで ゴールまで きょうそう（3ステージ）
   ・きょうりょく: たまは 1こ。1P が よこ（←→）、2P が たて（↑↓）。3P は よこ、4P は たて を いっしょに。ひとりなら りょうほう
+  ・モニターは 3D（three.js）。めいろの いたが かたむきに あわせて かたむく
   ・index.html は スマホゲーム/build_github.py が つくる（_common/pad.js と pad.css を うめこむ）
 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 /* PAD きょうつう: モニターは キャンバス 1まい、スマホは #pad の なか */
 :root{--ink:#3a2328;--paper:#fffaf0;--ok:#2f9e5b;--blue:#4a9fe0;--me:#3a2328;--head:#3a2328}
@@ -45,6 +47,8 @@ button.sub:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
 .small{font-size:14px;color:#7a6a60;text-align:center;line-height:1.5}
 #conn{text-align:center;padding:40px 16px;font-size:20px;line-height:1.6}
 [hidden]{display:none!important}
+canvas#gl{display:block;position:fixed;inset:0;width:100%;height:100%}
+body.pad #gl{display:none}
 
 body{background:#e9d3a8}
 :root{--head:#8a5a3b}
@@ -53,6 +57,7 @@ body{background:#e9d3a8}
 </style>
 </head>
 <body>
+<canvas id="gl"></canvas>
 <canvas id="cv"></canvas>
 <div id="pad">
   <header><h1>めいろころがし</h1><span id="badge">…</span></header>
@@ -264,7 +269,10 @@ const PAD = (() => {
       g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
     }
-    addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
+    for (const ev of ['pointerdown', 'keydown', 'touchstart', 'mousedown', 'click']) addEventListener(ev, unlock, true);
+    // モニターは ひらいた とたんに おとを ためす。ブラウザが ゆるしていれば（じどうさいせい OK の せってい）そのまま なる。
+    // だめでも 1びょうごとに ためしつづける
+    if (!ROOM) { unlock(); const iv = setInterval(() => { unlock(); if (ok()) clearInterval(iv); }, 1000); }
     return {
       unlock, ok, noise, tone,
       join() { tone({ f0: 660, dur: 0.12 }); tone({ f0: 990, dur: 0.22, delay: 0.1 }); },
@@ -362,6 +370,34 @@ const PAD = (() => {
     let ready = false; addEventListener('resize', fit); fit(); ready = true; return { cx, S };
   }
   function loop(f) { let last = performance.now(); const tick = now => { const dt = Math.min(0.05, (now - last) / 1000); last = now; f(dt); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }  // さいしょも つぎの フレームから（ゲームの へんすうが できてから）
+
+  /* ---------- モニター: 3D（three.js）。#gl キャンバスに かく。2D の #cv は うえに かさねて もじ・パネル用 ----------
+     たいらな いろ（トゥーン）＋ こい ふちどり で、ほかの ゲームの えと そろえる */
+  function gl(opt = {}) {
+    const el = document.getElementById('gl');
+    const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true });
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+    if (opt.shadow) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(opt.bg || '#efe3cc');
+    const camera = new THREE.PerspectiveCamera(opt.fov || 45, 1, 0.1, 500);
+    const grad = new THREE.DataTexture(new Uint8Array([150, 150, 150, 255, 255, 255, 255, 255]), 2, 1, THREE.RGBAFormat);  // 2だんかいの かげ
+    grad.minFilter = grad.magFilter = THREE.NearestFilter; grad.needsUpdate = true;
+    const mats = {};
+    const toon = c => mats[c] || (mats[c] = new THREE.MeshToonMaterial({ color: c, gradientMap: grad }));
+    const inkMat = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
+    // ふちどり: うらがえしの すこし おおきい くろい かたち
+    function outline(mesh, w = 0.05) { const o = new THREE.Mesh(mesh.geometry, inkMat); o.scale.setScalar(1 + w); mesh.add(o); return mesh; }
+    function mesh(geo, color, { ink = 0.05, cast = true, recv = false } = {}) { const m = new THREE.Mesh(geo, toon(color)); m.castShadow = cast; m.receiveShadow = recv; if (ink) outline(m, ink); return m; }
+    scene.add(new THREE.AmbientLight(0xffffff, 0.48));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.62); sun.position.set(4, 10, 6); scene.add(sun); scene.add(sun.target);
+    if (opt.shadow) { sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); const c = sun.shadow.camera; c.left = c.bottom = -20; c.right = c.top = 20; c.near = 0.5; c.far = 60; }
+    function fit() { const W = innerWidth, H = innerHeight; renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix(); }
+    addEventListener('resize', fit); fit();
+    // 3D の いち → がめんの いち（2D の もじを かさねる ため）
+    const v = new THREE.Vector3();
+    function toScreen(x, y, z) { v.set(x, y, z).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight, v.z < 1]; }
+    return { THREE, renderer, scene, camera, sun, toon, outline, mesh, inkMat, toScreen, render: () => renderer.render(scene, camera) };
+  }
 
   /* ---------- モニター: ゲームの ながれ（ロビー → 3・2・1 → プレイ → けっか） ----------
      spec: { id, title, sub, min, max, bg, init(members), update(dt), draw(), onData(p, d), stateFor(p), onKey(e), resize(W, H) }
@@ -464,7 +500,7 @@ const PAD = (() => {
     return Object.assign(P, { net, send: o => net.send(o), render, me: net.me });
   }
 
-  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone };
+  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone, gl };
 })();
 
 </script>
@@ -551,6 +587,58 @@ function startPad() {
    =================================================================== */
 function startMonitor() {
   const { cx, S } = PAD.canvas(document.getElementById('cv'), () => layout());
+  // ---- 3D ----
+  const V = PAD.gl({ bg: '#e9d3a8', shadow: true, fov: 40 }), T3 = THREE;
+  const boardG = new T3.Group(); V.scene.add(boardG);
+  let stageObjs = [], ballMeshes = new Map(), goalMesh = null;
+  function starShape(r1, r2) { const sh = new T3.Shape(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? r2 : r1; i ? sh.lineTo(Math.cos(a) * r, Math.sin(a) * r) : sh.moveTo(Math.cos(a) * r, Math.sin(a) * r); } return sh; }
+  function build3D() {
+    for (const o of stageObjs) boardG.remove(o); stageObjs = []; ballMeshes.clear();
+    const m = G.maze; if (!m) return;
+    const add = o => { boardG.add(o); stageObjs.push(o); return o; };
+    const ox = -m.cols / 2, oz = -m.rows / 2;
+    // いた（ゆか）
+    const floor = add(V.mesh(new T3.BoxGeometry(m.cols + 0.5, 0.35, m.rows + 0.5), '#f1d9a7', { ink: 0.015, cast: false, recv: true })); floor.position.y = -0.175;
+    const tiles = new T3.InstancedMesh(new T3.PlaneGeometry(1, 1), V.toon('#e8cb92'), m.cols * m.rows); tiles.receiveShadow = true; let n = 0; const M4 = new T3.Matrix4(), Q = new T3.Quaternion().setFromEuler(new T3.Euler(-Math.PI / 2, 0, 0));
+    for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) if ((r + c) % 2) { M4.compose(new T3.Vector3(ox + c + 0.5, 0.002, oz + r + 0.5), Q, new T3.Vector3(1, 1, 1)); tiles.setMatrixAt(n++, M4); }
+    tiles.count = n; add(tiles);
+    // かべ（インスタンスで まとめて かく）＋ ふちどり
+    const WH = 0.5, box = new T3.BoxGeometry(1, 1, 1);
+    const walls = new T3.InstancedMesh(box, V.toon('#a86b42'), m.rects.length), ink = new T3.InstancedMesh(box, V.inkMat, m.rects.length);
+    walls.castShadow = true; walls.receiveShadow = true;
+    m.rects.forEach(([rx, ry, rw, rh], i) => {
+      const pos = new T3.Vector3(ox + rx + rw / 2, WH / 2, oz + ry + rh / 2);
+      M4.compose(pos, new T3.Quaternion(), new T3.Vector3(rw, WH, rh)); walls.setMatrixAt(i, M4);
+      M4.compose(pos, new T3.Quaternion(), new T3.Vector3(rw + 0.05, WH + 0.05, rh + 0.05)); ink.setMatrixAt(i, M4);
+    });
+    add(walls); add(ink);
+    // スタート・あな・ゴール
+    const st = add(V.mesh(new T3.CylinderGeometry(0.4, 0.4, 0.02, 32), '#ffffff', { ink: 0, cast: false, recv: true })); st.position.set(ox + 0.5, 0.012, oz + 0.5);
+    for (const h of m.holes) { const hm = add(new T3.Mesh(new T3.CylinderGeometry(0.34, 0.34, 0.03, 28), new T3.MeshBasicMaterial({ color: '#1c1013' }))); hm.position.set(ox + h.x, 0.012, oz + h.y);
+      const rim = add(V.mesh(new T3.TorusGeometry(0.35, 0.04, 8, 28), '#5a3a2a', { ink: 0, cast: false })); rim.rotation.x = Math.PI / 2; rim.position.copy(hm.position); }
+    goalMesh = add(V.mesh(new T3.ExtrudeGeometry(starShape(0.38, 0.17), { depth: 0.12, bevelEnabled: false }), '#f5c518', { ink: 0.08 })); goalMesh.position.set(ox + m.goal.x, 0.45, oz + m.goal.y);
+    // たま
+    for (const b of G.balls) { const bm = add(V.mesh(new T3.SphereGeometry(R, 24, 18), b.color, { ink: 0.07 })); ballMeshes.set(b, bm); }
+    // カメラ: めいろ ぜんたいが はいる ように
+    const tanH = Math.tan(V.camera.fov * Math.PI / 360), asp = innerWidth / innerHeight;
+    const d = Math.max((m.cols + 1.2) / (2 * tanH * asp), (m.rows + 1.5) / (2 * tanH * 0.78)) * 1.02;
+    V.camera.position.set(0, d * 0.88, d * 0.47); V.camera.lookAt(0, 0, -m.rows * 0.04);
+  }
+  addEventListener('resize', () => { if (G.maze) build3D(); });
+  function update3D(tl, dt) {
+    const m = G.maze; if (!m) return;
+    boardG.rotation.x += ((tl.y * 0.14) - boardG.rotation.x) * Math.min(1, dt * 10);
+    boardG.rotation.z += ((-tl.x * 0.14) - boardG.rotation.z) * Math.min(1, dt * 10);
+    if (goalMesh) { goalMesh.rotation.y += dt * 1.5; goalMesh.rotation.x = -Math.PI / 2 * 0; }
+    for (const [b, bm] of ballMeshes) {
+      let x = b.x, z = b.y, y = R, sc = 1;
+      if (b.fall) { const u = Math.min(1, b.fall / 0.5); x = b.x + (b.fx - b.x) * u; z = b.y + (b.fy - b.y) * u; y = R - u * 0.8; sc = 1 - u * 0.6; }
+      if (b.done) { y = R + 0.25 + Math.sin(performance.now() / 200) * 0.05; sc = 0.7; }
+      bm.position.set(x - m.cols / 2, y, z - m.rows / 2); bm.scale.setScalar(sc);
+      bm.rotation.z -= b.vx * dt / R; bm.rotation.x += b.vy * dt / R;   // ころがる
+    }
+  }
+  const scr = (x, y, h = 0.6) => G.maze ? V.toScreen(x - G.maze.cols / 2, h, y - G.maze.rows / 2) : [0, 0];
   const D = PAD.draw(cx), INK = PAD.INK, sfx = PAD.sfx;
   const tilts = {};  // pid → {x, y}
   const room = PAD.host({
@@ -579,7 +667,7 @@ function startMonitor() {
     const sp = STAGES[G.stage]; G.maze = makeMaze(sp.cols, sp.rows, sp.holes); G.t = 0; G.rankN = 0; G.pops = [];
     if (G.mode === 'coop') G.balls = [newBall(0, '#f08a24', 0, 0)];
     else G.balls = G.members.map((p, i) => newBall(p.pid, p.color, (i % 2 ? 1 : -1) * 0.14, (i < 2 ? -1 : 1) * 0.14));
-    layout(); room.broadcast({ t: 'calib' }); sendStates();
+    layout(); build3D(); room.broadcast({ t: 'calib' }); sendStates();
   }
   function newBall(pid, color, ox, oy) { return { pid, color, x: 0.5 + ox, y: 0.5 + oy, vx: 0, vy: 0, done: false, rank: 0, time: 0, fall: 0, hitT: 0, trail: [] }; }
 
@@ -801,16 +889,16 @@ function startMonitor() {
   const fmt = t => t == null ? 'じかんぎれ' : t.toFixed(1) + 'びょう';
   function draw() {
     const W = S.W, H = S.H;
-    cx.fillStyle = '#e9d3a8'; cx.fillRect(0, 0, W, H);
-    cx.fillStyle = '#e0c592'; for (let i = -1; i < W / 60 + H / 60; i++) { cx.beginPath(); cx.moveTo(i * 60, 0); cx.lineTo(i * 60 - H, H); cx.lineTo(i * 60 - H + 24, H); cx.lineTo(i * 60 + 24, 0); cx.fill(); }
+    cx.clearRect(0, 0, W, H);
+    let tl = { x: 0, y: 0 }; const act = G.st === 'lobby' ? [] : G.balls.filter(b => !b.done); if (act.length) { for (const b of act) { const t = ballTilt(b); tl.x += t.x / act.length; tl.y += t.y / act.length; } }
+    if (G.st === 'lobby') { tl = { x: Math.sin(performance.now() / 1500) * 0.6, y: Math.cos(performance.now() / 1900) * 0.6 }; }
+    update3D(tl, 1 / 60); V.render();
     if (G.st === 'lobby') {
       D.lobby(room, W, H, { title: 'めいろころがし', sub: 'スマホを かたむけて たまを ゴールへ（1〜4にん）', hint: room.count() ? '1P の スマホで モードを えらんで スタート（Enter でも はじまる）' : 'スマホが なくても Enter で ためせるよ（やじるしキーで そうさ）', min: 1 });
       D.soundHint(W, H); return;
     }
-    let tl = { x: 0, y: 0 }; const act = G.balls.filter(b => !b.done); if (act.length) { for (const b of act) { const t = ballTilt(b); tl.x += t.x / act.length; tl.y += t.y / act.length; } }
-    drawBoard(tl);
-    for (const b of G.balls) drawBall(b);
-    for (const p of G.pops) { const u = p.t / 1.2, [x, y] = P(p.x, p.y); cx.globalAlpha = 1 - u * u; D.text(p.txt, x, y - u * L.cs * 0.8, L.cs * (p.big ? 0.6 : 0.4), p.color || '#fff', 'center', INK); cx.globalAlpha = 1; }
+    for (const b of G.balls) if (b.pid && G.mode !== 'coop' && !b.fall) { const [x, y] = scr(b.x, b.y, 0.95); D.text(PAD.NAMES[b.pid - 1], x, y, H * 0.032, '#fff', 'center', INK); }
+    for (const p of G.pops) { const u = p.t / 1.2, [x, y] = scr(p.x, p.y + 0.6, 0.8); cx.globalAlpha = 1 - u * u; D.text(p.txt, x, y - u * L.cs * 0.8, L.cs * (p.big ? 0.6 : 0.4), p.color || '#fff', 'center', INK); cx.globalAlpha = 1; }
     drawHUD();
     if (G.st === 'count') { const n = Math.ceil(3 - G.t); D.text(String(n), W / 2, H / 2, H * (0.3 - (G.t % 1) * 0.08), '#fff', 'center', INK); D.text('スマホを たいらに もってね', W / 2, H * 0.72, H * 0.05, '#fff', 'center', INK); }
     if (G.st === 'play' && G.t < 1.2) D.text('スタート！', W / 2, H / 2, H * 0.12, '#fff', 'center', INK);
@@ -827,6 +915,7 @@ function startMonitor() {
     D.soundHint(W, H);
   }
   layout();
+  G.maze = makeMaze(9, 5, 0); G.balls = []; build3D();
   window.__game = { G, room, tilts, newGame, nextStage };
   PAD.loop(dt => { update(dt); draw(); });
 }

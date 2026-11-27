@@ -244,16 +244,19 @@ function startMonitor() {
   function resize() {
     DPR = Math.min(2, window.devicePixelRatio || 1); W = innerWidth; H = innerHeight;
     cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); cx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    const s = Math.min(H * 0.8 / T.h, W * 0.55 / T.w);
-    const gx = W - 190 * s, gy = H * 0.04 + T.grip[1] * s;
-    const desk = H * 638 / 1280;
-    L = { s, gx, gy, desk, bowlX: gx - (T.grip[0] - T.bas[0]) * s - T.basR * s * 2.0, bowlY: H * 0.60, bowlR: Math.min(H * 0.13, W * 0.11) };
+    // てぼを おおきく、まんなかより すこし みぎに。うでは みぎの はしまで のばして かく（drawTebo）
+    const s = Math.min(H * 0.95 / T.h, W * 0.75 / T.w);
+    const basX = W * 0.6, gx = basX + (T.grip[0] - T.bas[0]) * s, gy = H * 0.03 + T.grip[1] * s;
+    const desk = H * 638 / 1280, bowlR = Math.min(H * 0.17, W * 0.13);
+    L = { s, gx, gy, desk, bowlX: Math.max(bowlR * 1.2, basX - T.basR * s - bowlR * 1.6), bowlY: H * 0.6, bowlR };
   }
   addEventListener('resize', resize); resize();
 
   // ---- おと ----
   // ブラウザの きまりで、モニターの がめんを 1かい クリック（か キーを おす）までは おとが でない
-  addEventListener('pointerdown', SFX.unlock); addEventListener('keydown', SFX.unlock);
+  for (const ev of ['pointerdown', 'keydown', 'touchstart', 'mousedown', 'click']) addEventListener(ev, SFX.unlock, true);
+  // ひらいた とたんに おとを ためす（ブラウザが ゆるしていれば そのまま なる）。だめなら 1びょうごとに ためす
+  SFX.unlock(); { const iv = setInterval(() => { SFX.unlock(); if (SFX.ok()) clearInterval(iv); }, 1000); }
   // スマホにも おなじ おとを ならす（ふっている ひとの てもとで きこえる）
   function sfx(n, u) { SFX[n](u); send({ t: 'sfx', n, u }); }
 
@@ -446,6 +449,13 @@ function startMonitor() {
     const ak = A.k * s, aw = im.arm.width * ak, ah = im.arm.height * ak;
     cx.rotate(A.rot - G.rot * 0.6);
     cx.drawImage(im.arm, -A.grip[0] * ak, -A.grip[1] * ak, aw, ah);
+    // うでの きれめから がめんの みぎはしまで、おなじ いろで のばす
+    cx.save(); cx.translate(-A.grip[0] * ak, -A.grip[1] * ak); cx.scale(ak, ak);
+    const X0 = 672, Ln = 3000;
+    cx.fillStyle = '#f7c68f'; cx.beginPath(); cx.moveTo(X0, 263); cx.lineTo(X0 + Ln, 263 + Ln * 0.33); cx.lineTo(X0 + Ln, 487 + Ln * 0.37); cx.lineTo(X0, 487); cx.closePath(); cx.fill();
+    cx.strokeStyle = '#de8a4f'; cx.lineWidth = 7; cx.lineCap = 'round';
+    cx.beginPath(); cx.moveTo(X0 - 4, 262); cx.lineTo(X0 + Ln, 262 + Ln * 0.33); cx.moveTo(X0 - 4, 488); cx.lineTo(X0 + Ln, 488 + Ln * 0.37); cx.stroke();
+    cx.restore();
     cx.restore();
   }
   function drawMenFlying() {
@@ -557,7 +567,7 @@ function startMonitor() {
     if (G.st === 'wait') drawWait();
     else if (G.st === 'ready') drawCenter(['つながった！', 'スマホの「はじめる」を おしてね'], 'スマホに あそびかたが でているよ');
     else if (G.st === 'count') { drawHUD(); const n = Math.ceil(3 - G.pt); text(String(n), W * 0.3, H * 0.5, H * (0.3 - (G.pt % 1) * 0.08), '#fff', 'center', INK); }
-    else if (G.st === 'play') { drawHUD(); if (G.ph === 'shake' && G.pt < 1.6 && G.bowls === 0) text('スマホを ふって！', W * 0.3, H * 0.5, H * 0.08, '#fff', 'center', INK); }
+    else if (G.st === 'play') { drawHUD(); if (G.ph === 'shake' && G.pt < 1.6 && G.bowls === 0) text('スマホを ふって！', W * 0.3, H * 0.3, H * 0.08, '#fff', 'center', INK); }
     else if (G.st === 'result') { drawHUD(); drawResult(); }
     // つながっていない ときは すみに ちいさく QR
     if (!conn && G.st !== 'wait' && online && qr) { const qs = H * 0.16; cx.fillStyle = INK; rr(W - qs - 22, H - qs - 22, qs + 12, qs + 12, 8); cx.fill(); drawQR(W - qs - 16, H - qs - 16, qs); }
