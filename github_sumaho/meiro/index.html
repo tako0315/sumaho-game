@@ -9,7 +9,7 @@
   ・スマホを かたむけると、モニターの いたが かたむいて たまが ころがる
   ・5ステージを つづけて クリアする。ゴールしたら すぐ つぎの ステージが はじまる（ひとりずつ べつべつに すすむ）
   ・5ステージの ごうけいタイムで しょうぶ。ふくすうにんの ときは がめんを ぶんかつ（2にん=ひだり みぎ、3〜4にん=4ぶんかつ）
-  ・ステージ: めいろ → おとしあな ゾーン → めいろ＋あな → ほそい はし（おちたら やりなおし）→ おおきな めいろ
+  ・ステージ: めいろ → めいろ＋あな → おおきな めいろ → ほそい はし（おちたら やりなおし）→ おとしあな ゾーン
   ・あなに おちる／はしから おちると その ステージの スタートに もどる
   ・モニターは 3D（three.js）
   ・index.html は スマホゲーム/build_github.py が つくる（_common/pad.js と pad.css を うめこむ）
@@ -57,6 +57,9 @@ body:not(.pad) #gyro{display:none}
 #pad main{padding-bottom:64px}
 #home{position:fixed;left:12px;top:10px;z-index:20;font-size:15px;font-weight:bold;color:var(--ink);background:#fffaf0;border:3px solid var(--ink);border-radius:99px;padding:6px 14px;text-decoration:none;box-shadow:0 3px 0 var(--ink)}
 body.pad #home{display:none}
+
+#tutskip{position:fixed;left:10px;bottom:10px;z-index:20;font:inherit;font-size:13px;font-weight:bold;color:var(--ink);background:#fff;border:3px solid var(--ink);border-radius:99px;padding:7px 12px;box-shadow:0 3px 0 var(--ink)}
+#tutskip[hidden]{display:none}
 
 body{background:#e9d3a8}
 :root{--head:#8a5a3b}
@@ -200,6 +203,13 @@ const PAD = (() => {
     return { me, send(o) { if (conn && conn.open) try { conn.send(o); } catch (e) {} }, keepAwake };
   }
 
+  // ブラウザごとの「さいしょから おとを だす」 せってい（1かい すれば おなじ サイトの ゲーム ぜんぶに きく）
+  const SOUND_HOW = (() => { const u = navigator.userAgent;
+    if (/Edg\//.test(u)) return 'つぎから さいしょから ならす: アドレスバー ひだりの かぎ →「このサイトのアクセス許可」→「メディアの自動再生」を「許可」';
+    if (/Firefox\//.test(u)) return 'つぎから さいしょから ならす: アドレスバー ひだりの アイコン →「自動再生」を「音声と動画を許可」';
+    if (/Safari\//.test(u) && !/Chrome\//.test(u)) return 'つぎから さいしょから ならす: メニュー「Safari」→「この Web サイトの設定」→「自動再生」を「すべての自動再生を許可」';
+    return 'つぎから さいしょから ならす: アドレスバー ひだりの アイコン →「サイトの設定」→「音声」を「許可」';
+  })();
   /* ---------- スマホ: センサー ---------- */
   const sensors = (() => {
     let asked = false, granted = false;
@@ -351,9 +361,12 @@ const PAD = (() => {
         const a = list.slice().sort((p, q) => desc ? q[key] - p[key] : p[key] - q[key]);
         a.forEach((r, i) => { r.place = i && a[i - 1][key] === r[key] ? a[i - 1].place : i + 1; }); return a;
       },
+      // おとが とまっている ときの あんない。ブラウザの サイト せってい で「おと／じどうさいせい」を きょかすると、つぎから さいしょから なる
       soundHint(W, H) {
-        if (sfx.ok()) return; const h = H * 0.055, w = h * 12.5, x = (W - w) / 2, y = H - h - 10;  // した まんなか
-        D.panel(x, y, w, h, '#fff3c4', 12); D.text('クリックすると おとが でるよ（いちらんから ひらくと さいしょから なる）', x + w / 2, y + h / 2, h * 0.34);
+        if (sfx.ok()) return; const h = H * 0.1, w = Math.min(W - 20, h * 9), x = (W - w) / 2, y = H - h - 10;  // した まんなか
+        D.panel(x, y, w, h, '#fff3c4', 12);
+        D.text('おとが とまっています。クリックすると なるよ', x + w / 2, y + h * 0.3, h * 0.24);
+        D.text(SOUND_HOW, x + w / 2, y + h * 0.7, Math.min(h * 0.21, w / SOUND_HOW.length * 1.8), '#7a4a2a');
       },
     };
     return D;
@@ -398,9 +411,11 @@ const PAD = (() => {
 
   /* ---------- モニター: ゲームの ながれ（ロビー → 3・2・1 → プレイ → けっか） ----------
      spec: { id, title, sub, min, max, bg, init(members), update(dt), draw(), onData(p, d), stateFor(p), onKey(e), resize(W, H) }
-     api.finish(title, rows) で けっか。rows: [{ color, a, b, hi }] */
+     api.finish(title, rows) で けっか。rows: [{ color, a, b, hi }]
+     れんしゅう（チュートリアル）: spec.tutorial = { steps: ['せつめい', ...] か (p) => [...], check(p, d, k) → true（できた）/ 'ヒント'（ちがう）/ false }
+       はじめる → れんしゅう → みんなが ぜんぶ できたら 3・2・1 → プレイ（とばせない） */
   function game(spec) {
-    const api = { st: 'lobby', t: 0, members: [], final: null }; let toast = null;
+    const api = { st: 'lobby', t: 0, members: [], final: null, tut: {} }; let toast = null; const TUT = spec.tutorial, tutHint = {};
     const { cx, S } = canvas(document.getElementById('cv'), (W, H) => spec.resize && spec.resize(W, H));
     const D = draw(cx); Object.assign(api, { cx, D, S });
     const min = spec.min || 1;
@@ -413,6 +428,7 @@ const PAD = (() => {
         if (d.t === 'start') { if (isHost(p) && (api.st === 'lobby' || api.st === 'final')) begin(); return; }
         if (d.t === 'lobby') { if (isHost(p) && api.st === 'final') { api.st = 'lobby'; push(); } return; }
         if (d.t === 'recal') { toast = { txt: p.name + ' ジャイロ リセット', t: 0, c: p.color }; spec.onRecal && spec.onRecal(p); return; }
+        if (api.st === 'tut') { tutData(p, d); return; }
         if (api.st === 'play' || spec.dataAlways) spec.onData && spec.onData(p, d);
       },
     });
@@ -422,16 +438,35 @@ const PAD = (() => {
     function begin() {
       const l = room.list();
       if (l.length < min) { if (min > 1 || !spec.keyboard) { sfx.bad(); return; } }
+      if (spec.counts && l.length && !spec.counts.includes(l.length)) { sfx.bad(); return; }  // あそべる にんずう（れい: [2, 4]）
       api.members = l.length ? l : [{ pid: 1, color: COLORS[0], cname: COLOR_NAMES[0], name: NAMES[0], kb: true, online: true }];
       api.final = null; api.t = 0; api.st = 'count';
-      spec.init(api.members); room.broadcast({ t: 'calib' }); push();
+      spec.init(api.members); room.broadcast({ t: 'calib' });
+      if (TUT) { api.st = 'tut'; api.tut = {}; for (const m of api.members) api.tut[m.pid] = m.kb ? 99 : 0; }
+      push();
     }
+    // ---- れんしゅう ----
+    const tutSteps = p => typeof TUT.steps === 'function' ? TUT.steps(p) : TUT.steps;
+    api.tutStep = pid => api.tut[pid] || 0;
+    function tutData(p, d) {
+      const k = api.tut[p.pid] || 0, steps = tutSteps(p); if (k >= steps.length) return;
+      const r = TUT.check(p, d, k);
+      if (r === true) {
+        api.tut[p.pid] = k + 1; tutHint[p.pid] = { txt: k + 1 >= steps.length ? 'OK！' : 'できた！', t: 0, good: true };
+        sfx.good(); room.send(p.pid, { t: 'vibe', ms: 80 }); push();
+        if (api.members.every(m => !api.alive(m) || (api.tut[m.pid] || 0) >= tutSteps(m).length)) setTimeout(() => { if (api.st === 'tut') endTut(); }, 700);
+      } else if (typeof r === 'string') { tutHint[p.pid] = { txt: r, t: 0 }; push(); }
+    }
+    api.skipTut = () => { if (api.st === 'tut') endTut(); };   // テスト よう（ふつうは とばせない）
+    function endTut() { api.st = 'count'; api.t = 0; if (TUT.calib !== false) room.broadcast({ t: 'calib' }); push(); }
     api.begin = begin;
     api.finish = (title, rows) => { api.st = 'final'; api.t = 0; api.final = { title, rows }; sfx.fanfare(); room.broadcast({ t: 'vibe', ms: 200 }); push(); };
     let lastPush = 0;
     function push(force = true) {
       const now = performance.now(); if (!force && now - lastPush < 300) return; lastPush = now;
-      for (const p of room.list()) { let x = {}; try { x = spec.stateFor ? spec.stateFor(p) || {} : {}; } catch (e) { console.error(e); } room.send(p.pid, Object.assign({ t: 'state', st: api.st, host: isHost(p) }, x)); }
+      for (const p of room.list()) { let x = {}; try { x = spec.stateFor ? spec.stateFor(p) || {} : {}; } catch (e) { console.error(e); }
+        if (api.st === 'tut') { const st = tutSteps(p), k = api.tut[p.pid] || 0, h = tutHint[p.pid]; Object.assign(x, { tutK: k, tutN: st.length, tutText: st[Math.min(k, st.length - 1)], tutHint: h && !h.good && h.t < 2.5 ? h.txt : '' }); }
+        room.send(p.pid, Object.assign({ t: 'state', st: api.st, host: isHost(p) }, x)); }
     }
     api.push = push;
     api.isHost = isHost;
@@ -448,22 +483,39 @@ const PAD = (() => {
         const n = Math.ceil(3 - api.t), pr = Math.ceil(3 - (api.t - dt)); if (n !== pr && n > 0) sfx.count();
         if (api.t >= 3) { api.st = 'play'; api.t = 0; sfx.go(); spec.onPlay && spec.onPlay(); push(); }
       } else if (api.st === 'play') { spec.update(dt); push(false); }
+      else if (api.st === 'tut') { TUT.update && TUT.update(dt); for (const k in tutHint) tutHint[k].t += dt; }
       cx.clearRect(0, 0, W, H);
       if (spec.bg) spec.bg(W, H); else { cx.fillStyle = '#efe3cc'; cx.fillRect(0, 0, W, H); }
       if (api.st === 'lobby') {
         const n = room.count();
-        D.lobby(room, W, H, { title: spec.title, sub: spec.sub, min,
-          hint: n >= min ? '1P の スマホで スタート（Enter でも はじまる）' : (min > 1 ? 'あと ' + (min - n) + 'にん さんか すると はじめられるよ' : 'スマホが なくても Enter で ためせるよ') });
+        D.lobby(room, W, H, { title: spec.title, sub: spec.sub, min: spec.counts && n >= min && !spec.counts.includes(n) ? 99 : min,
+          hint: spec.counts && n >= min && !spec.counts.includes(n) ? spec.counts.join('にん か ') + 'にんで あそべるよ（あと ' + (spec.counts.find(c => c > n) - n) + 'にん）' : n >= min ? '1P の スマホで スタート（Enter でも はじまる）' : (min > 1 ? 'あと ' + (min - n) + 'にん さんか すると はじめられるよ' : 'スマホが なくても Enter で ためせるよ') });
       } else {
         spec.draw(dt);
         if (api.st === 'count') { const n = Math.ceil(3 - api.t); D.text(String(n), W / 2, H / 2, H * (0.3 - (api.t % 1) * 0.08), '#fff', 'center', INK); if (spec.countMsg) D.text(spec.countMsg, W / 2, H * 0.72, H * 0.05, '#fff', 'center', INK); }
         if (api.st === 'play' && api.t < 1) D.text('スタート！', W / 2, H / 2, H * 0.12, '#fff', 'center', INK);
+        if (api.st === 'tut') tutPanel(W, H);
         if (api.st === 'final' && api.final) D.result(W, H, api.final.title, api.final.rows, '1P の スマホで「もういちど」（Enter でも OK）', Math.min(1, api.t / 0.3));
       }
       home.hidden = !(api.st === 'lobby' || api.st === 'final');
       if (toast) { toast.t += dt; const a = Math.min(1, 2 - toast.t * 1.3); if (a <= 0) toast = null; else { cx.globalAlpha = a; D.text(toast.txt, W - 16, H - 30, H * 0.032, toast.c, 'right', INK); cx.globalAlpha = 1; } }
       D.soundHint(W, H);
     });
+    // れんしゅうの ひょう（だれが どこまで できたか）
+    function tutPanel(W, H) {
+      const ms = api.members.filter(m => !m.kb), n = ms.length, rh = H * 0.075, pw = Math.min(W * 0.86, H * 1.5), ph = H * 0.13 + n * rh + H * 0.05, x = (W - pw) / 2, y = H * 0.5 - ph / 2;
+      cx.globalAlpha = 0.95; D.panel(x, y, pw, ph); cx.globalAlpha = 1;
+      D.text('れんしゅう', W / 2, y + H * 0.045, H * 0.05); D.text('ぜんいん できたら しあい スタート！', W / 2, y + H * 0.095, H * 0.028, '#7a6a60');
+      ms.forEach((m, i) => {
+        const yy = y + H * 0.13 + i * rh + rh / 2, st = tutSteps(m), k = api.tut[m.pid] || 0, done = k >= st.length, h = tutHint[m.pid];
+        D.panel(x + pw * 0.03, yy - rh * 0.4, pw * 0.14, rh * 0.8, m.color, 10); D.text(m.name, x + pw * 0.1, yy, rh * 0.38, m.color === '#f5c518' ? INK : '#fff');
+        for (let j = 0; j < st.length; j++) { cx.beginPath(); cx.arc(x + pw * 0.21 + j * rh * 0.42, yy, rh * 0.14, 0, Math.PI * 2); cx.fillStyle = j < k ? '#30a46c' : j === k ? '#fff' : '#e6dccb'; cx.fill(); cx.lineWidth = 2; cx.strokeStyle = INK; cx.stroke(); }
+        const tx = x + pw * 0.21 + st.length * rh * 0.42;
+        if (done) D.text('OK！ みんなを まってるよ', tx, yy, rh * 0.36, '#30a46c', 'left');
+        else if (h && !h.good && h.t < 2.5) D.text(h.txt, tx, yy, rh * 0.34, '#e5484d', 'left');
+        else D.text(st[k], tx, yy, Math.min(rh * 0.34, (pw * 0.95 - tx + x) / Math.max(8, st[k].length) * 1.7), INK, 'left');
+      });
+    }
     return api;
   }
 
@@ -474,12 +526,12 @@ const PAD = (() => {
     const $ = i => document.getElementById(i);
     const P = { st: {}, ready: false };
     const net = join({ id, onWelcome: () => render(), onData: d => {
-      if (d.t === 'state') { P.st = d; render(); onState && onState(d); }
+      if (d.t === 'state') { P.raw = d; const v = d.st === 'tut' ? Object.assign({}, d, { st: 'play', tut: true }) : d; P.st = v; render(); onState && onState(v); }
       else if (d.t === 'calib') { sensors.calibrate(); onCalib && onCalib(); }
       else onData && onData(d);
     } });
     function render() {
-      const st = P.st, s = st.st || 'lobby';
+      const st = P.st, s = st.tut ? 'tut' : (st.st || 'lobby');
       if ($('ready')) $('ready').hidden = P.ready;
       gy.hidden = !P.ready;
       if ($('hostbox')) $('hostbox').hidden = !(P.ready && st.host && (s === 'lobby' || s === 'final'));
@@ -490,7 +542,9 @@ const PAD = (() => {
       else if (s === 'lobby') { msg = st.host ? 'みんな そろったら スタート' : '1P が スタートするのを まってね'; sub = msgs.lobby || ''; }
       else if (s === 'count') { msg = msgs.count || 'じゅんび…'; }
       else if (s === 'final') { msg = st.msg || 'おしまい！'; sub = st.host ? 'もういちど あそぶ？' : 'モニターを みてね'; }
-      if (s === 'play' || st.msg) { msg = st.msg || msg; sub = st.sub || sub; }
+      if (s === 'play' || (st.msg && s !== 'tut')) { msg = st.msg || msg; sub = st.sub || sub; }
+      if (s === 'tut') { const done = st.tutK >= st.tutN; msg = done ? 'れんしゅう OK！' : 'れんしゅう ' + (st.tutK + 1) + ' / ' + st.tutN; sub = done ? 'みんなが おわるのを まってね' : (st.tutHint ? st.tutHint + '　' : '') + st.tutText; }
+      document.body.classList.toggle('tutorial', s === 'tut');
       if ($('msg')) $('msg').textContent = msg; if ($('sub')) $('sub').textContent = sub;
     }
     if ($('ready')) $('ready').onclick = async () => {
@@ -514,10 +568,10 @@ const PAD = (() => {
 const GAME_ID = 'meiro', LIMIT = 300, AFTER = 40;   // LIMIT: ぜんたいの じかん、AFTER: だれかが ゴールしてから まつ じかん
 const PLAN = [
   { type: 'maze', cols: 9, rows: 5, holes: 0, name: 'めいろ' },
-  { type: 'pits', cols: 12, rows: 7, name: 'おとしあな ゾーン' },
   { type: 'maze', cols: 11, rows: 7, holes: 3, name: 'めいろ＋あな' },
-  { type: 'bridge', cols: 13, rows: 7, name: 'ほそい はし' },
   { type: 'maze', cols: 13, rows: 8, holes: 5, name: 'おおきな めいろ' },
+  { type: 'bridge', cols: 13, rows: 7, name: 'ほそい はし' },
+  { type: 'pits', cols: 12, rows: 7, name: 'おとしあな ゾーン' },
 ];
 if (PAD.isPad) startPad(); else startMonitor();
 
@@ -559,6 +613,10 @@ function startPad() {
 function startMonitor() {
   let G = {}; const tilts = {}, keys = {};
   const api = PAD.game({
+    tutorial: {
+      steps: ['スマホを たいらに もって、ひだり みぎに かたむけてみよう', 'こんどは まえ うしろに かたむけてみよう'],
+      check(p, d, k) { if (d.t !== 'tilt') return false; tilts[p.pid] = { x: +d.x || 0, y: +d.y || 0 }; return k === 0 ? Math.abs(+d.x) > 0.5 : Math.abs(+d.y) > 0.5; },
+    },
     id: GAME_ID, title: 'めいろころがし', sub: 'スマホを かたむけて 5ステージ れんぞく！ ごうけいタイムで しょうぶ（1〜4にん）', keyboard: true, countMsg: 'スマホを たいらに もってね',
     init(members) {
       clearBoards();

@@ -56,8 +56,11 @@ body:not(.pad) #gyro{display:none}
 #home{position:fixed;left:12px;top:10px;z-index:20;font-size:15px;font-weight:bold;color:var(--ink);background:#fffaf0;border:3px solid var(--ink);border-radius:99px;padding:6px 14px;text-decoration:none;box-shadow:0 3px 0 var(--ink)}
 body.pad #home{display:none}
 
+#tutskip{position:fixed;left:10px;bottom:10px;z-index:20;font:inherit;font-size:13px;font-weight:bold;color:var(--ink);background:#fff;border:3px solid var(--ink);border-radius:99px;padding:7px 12px;box-shadow:0 3px 0 var(--ink)}
+#tutskip[hidden]{display:none}
+
 :root{--head:#3e2f6b}
-#board{position:relative;height:44vh;min-height:250px;background:#2b2450;border:4px solid var(--ink);border-radius:20px;touch-action:none;overflow:hidden;margin:8px 0 10px}
+#board{position:relative;height:64vh;min-height:330px;background:#2b2450;border:4px solid var(--ink);border-radius:20px;touch-action:none;overflow:hidden;margin:8px 0 10px}
 #board canvas{position:absolute;inset:0;width:100%;height:100%}
 #spell{font-size:28px;font-weight:bold;text-align:center;min-height:40px}
 #castbtn{background:#7a4fd6}
@@ -84,7 +87,8 @@ body.pad #home{display:none}
       <div class="card">
         <h2>あそびかた</h2>
         <ol class="how">
-          <li>むらさきの ばしょに ゆびで まほうじんを かく</li>
+          <li>はじめに れんしゅう：ほのお・こおり・かみなりを 1かいずつ だせたら しあい スタート</li>
+          <li>むらさきの ばしょに ゆびで まほうじんを かく（おおきく かいて OK）</li>
           <li>まる＝ほのお、ギザギザ＝かみなり、まっすぐ＝こおり</li>
           <li>かけたら スマホを つえの ように ふって はなつ！ つよく ふるほど つよい</li>
           <li>ほのお → こおり → かみなり → ほのお の じゅんに つよい</li>
@@ -201,6 +205,13 @@ const PAD = (() => {
     return { me, send(o) { if (conn && conn.open) try { conn.send(o); } catch (e) {} }, keepAwake };
   }
 
+  // ブラウザごとの「さいしょから おとを だす」 せってい（1かい すれば おなじ サイトの ゲーム ぜんぶに きく）
+  const SOUND_HOW = (() => { const u = navigator.userAgent;
+    if (/Edg\//.test(u)) return 'つぎから さいしょから ならす: アドレスバー ひだりの かぎ →「このサイトのアクセス許可」→「メディアの自動再生」を「許可」';
+    if (/Firefox\//.test(u)) return 'つぎから さいしょから ならす: アドレスバー ひだりの アイコン →「自動再生」を「音声と動画を許可」';
+    if (/Safari\//.test(u) && !/Chrome\//.test(u)) return 'つぎから さいしょから ならす: メニュー「Safari」→「この Web サイトの設定」→「自動再生」を「すべての自動再生を許可」';
+    return 'つぎから さいしょから ならす: アドレスバー ひだりの アイコン →「サイトの設定」→「音声」を「許可」';
+  })();
   /* ---------- スマホ: センサー ---------- */
   const sensors = (() => {
     let asked = false, granted = false;
@@ -352,9 +363,12 @@ const PAD = (() => {
         const a = list.slice().sort((p, q) => desc ? q[key] - p[key] : p[key] - q[key]);
         a.forEach((r, i) => { r.place = i && a[i - 1][key] === r[key] ? a[i - 1].place : i + 1; }); return a;
       },
+      // おとが とまっている ときの あんない。ブラウザの サイト せってい で「おと／じどうさいせい」を きょかすると、つぎから さいしょから なる
       soundHint(W, H) {
-        if (sfx.ok()) return; const h = H * 0.055, w = h * 12.5, x = (W - w) / 2, y = H - h - 10;  // した まんなか
-        D.panel(x, y, w, h, '#fff3c4', 12); D.text('クリックすると おとが でるよ（いちらんから ひらくと さいしょから なる）', x + w / 2, y + h / 2, h * 0.34);
+        if (sfx.ok()) return; const h = H * 0.1, w = Math.min(W - 20, h * 9), x = (W - w) / 2, y = H - h - 10;  // した まんなか
+        D.panel(x, y, w, h, '#fff3c4', 12);
+        D.text('おとが とまっています。クリックすると なるよ', x + w / 2, y + h * 0.3, h * 0.24);
+        D.text(SOUND_HOW, x + w / 2, y + h * 0.7, Math.min(h * 0.21, w / SOUND_HOW.length * 1.8), '#7a4a2a');
       },
     };
     return D;
@@ -399,9 +413,11 @@ const PAD = (() => {
 
   /* ---------- モニター: ゲームの ながれ（ロビー → 3・2・1 → プレイ → けっか） ----------
      spec: { id, title, sub, min, max, bg, init(members), update(dt), draw(), onData(p, d), stateFor(p), onKey(e), resize(W, H) }
-     api.finish(title, rows) で けっか。rows: [{ color, a, b, hi }] */
+     api.finish(title, rows) で けっか。rows: [{ color, a, b, hi }]
+     れんしゅう（チュートリアル）: spec.tutorial = { steps: ['せつめい', ...] か (p) => [...], check(p, d, k) → true（できた）/ 'ヒント'（ちがう）/ false }
+       はじめる → れんしゅう → みんなが ぜんぶ できたら 3・2・1 → プレイ（とばせない） */
   function game(spec) {
-    const api = { st: 'lobby', t: 0, members: [], final: null }; let toast = null;
+    const api = { st: 'lobby', t: 0, members: [], final: null, tut: {} }; let toast = null; const TUT = spec.tutorial, tutHint = {};
     const { cx, S } = canvas(document.getElementById('cv'), (W, H) => spec.resize && spec.resize(W, H));
     const D = draw(cx); Object.assign(api, { cx, D, S });
     const min = spec.min || 1;
@@ -414,6 +430,7 @@ const PAD = (() => {
         if (d.t === 'start') { if (isHost(p) && (api.st === 'lobby' || api.st === 'final')) begin(); return; }
         if (d.t === 'lobby') { if (isHost(p) && api.st === 'final') { api.st = 'lobby'; push(); } return; }
         if (d.t === 'recal') { toast = { txt: p.name + ' ジャイロ リセット', t: 0, c: p.color }; spec.onRecal && spec.onRecal(p); return; }
+        if (api.st === 'tut') { tutData(p, d); return; }
         if (api.st === 'play' || spec.dataAlways) spec.onData && spec.onData(p, d);
       },
     });
@@ -423,16 +440,35 @@ const PAD = (() => {
     function begin() {
       const l = room.list();
       if (l.length < min) { if (min > 1 || !spec.keyboard) { sfx.bad(); return; } }
+      if (spec.counts && l.length && !spec.counts.includes(l.length)) { sfx.bad(); return; }  // あそべる にんずう（れい: [2, 4]）
       api.members = l.length ? l : [{ pid: 1, color: COLORS[0], cname: COLOR_NAMES[0], name: NAMES[0], kb: true, online: true }];
       api.final = null; api.t = 0; api.st = 'count';
-      spec.init(api.members); room.broadcast({ t: 'calib' }); push();
+      spec.init(api.members); room.broadcast({ t: 'calib' });
+      if (TUT) { api.st = 'tut'; api.tut = {}; for (const m of api.members) api.tut[m.pid] = m.kb ? 99 : 0; }
+      push();
     }
+    // ---- れんしゅう ----
+    const tutSteps = p => typeof TUT.steps === 'function' ? TUT.steps(p) : TUT.steps;
+    api.tutStep = pid => api.tut[pid] || 0;
+    function tutData(p, d) {
+      const k = api.tut[p.pid] || 0, steps = tutSteps(p); if (k >= steps.length) return;
+      const r = TUT.check(p, d, k);
+      if (r === true) {
+        api.tut[p.pid] = k + 1; tutHint[p.pid] = { txt: k + 1 >= steps.length ? 'OK！' : 'できた！', t: 0, good: true };
+        sfx.good(); room.send(p.pid, { t: 'vibe', ms: 80 }); push();
+        if (api.members.every(m => !api.alive(m) || (api.tut[m.pid] || 0) >= tutSteps(m).length)) setTimeout(() => { if (api.st === 'tut') endTut(); }, 700);
+      } else if (typeof r === 'string') { tutHint[p.pid] = { txt: r, t: 0 }; push(); }
+    }
+    api.skipTut = () => { if (api.st === 'tut') endTut(); };   // テスト よう（ふつうは とばせない）
+    function endTut() { api.st = 'count'; api.t = 0; if (TUT.calib !== false) room.broadcast({ t: 'calib' }); push(); }
     api.begin = begin;
     api.finish = (title, rows) => { api.st = 'final'; api.t = 0; api.final = { title, rows }; sfx.fanfare(); room.broadcast({ t: 'vibe', ms: 200 }); push(); };
     let lastPush = 0;
     function push(force = true) {
       const now = performance.now(); if (!force && now - lastPush < 300) return; lastPush = now;
-      for (const p of room.list()) { let x = {}; try { x = spec.stateFor ? spec.stateFor(p) || {} : {}; } catch (e) { console.error(e); } room.send(p.pid, Object.assign({ t: 'state', st: api.st, host: isHost(p) }, x)); }
+      for (const p of room.list()) { let x = {}; try { x = spec.stateFor ? spec.stateFor(p) || {} : {}; } catch (e) { console.error(e); }
+        if (api.st === 'tut') { const st = tutSteps(p), k = api.tut[p.pid] || 0, h = tutHint[p.pid]; Object.assign(x, { tutK: k, tutN: st.length, tutText: st[Math.min(k, st.length - 1)], tutHint: h && !h.good && h.t < 2.5 ? h.txt : '' }); }
+        room.send(p.pid, Object.assign({ t: 'state', st: api.st, host: isHost(p) }, x)); }
     }
     api.push = push;
     api.isHost = isHost;
@@ -449,22 +485,39 @@ const PAD = (() => {
         const n = Math.ceil(3 - api.t), pr = Math.ceil(3 - (api.t - dt)); if (n !== pr && n > 0) sfx.count();
         if (api.t >= 3) { api.st = 'play'; api.t = 0; sfx.go(); spec.onPlay && spec.onPlay(); push(); }
       } else if (api.st === 'play') { spec.update(dt); push(false); }
+      else if (api.st === 'tut') { TUT.update && TUT.update(dt); for (const k in tutHint) tutHint[k].t += dt; }
       cx.clearRect(0, 0, W, H);
       if (spec.bg) spec.bg(W, H); else { cx.fillStyle = '#efe3cc'; cx.fillRect(0, 0, W, H); }
       if (api.st === 'lobby') {
         const n = room.count();
-        D.lobby(room, W, H, { title: spec.title, sub: spec.sub, min,
-          hint: n >= min ? '1P の スマホで スタート（Enter でも はじまる）' : (min > 1 ? 'あと ' + (min - n) + 'にん さんか すると はじめられるよ' : 'スマホが なくても Enter で ためせるよ') });
+        D.lobby(room, W, H, { title: spec.title, sub: spec.sub, min: spec.counts && n >= min && !spec.counts.includes(n) ? 99 : min,
+          hint: spec.counts && n >= min && !spec.counts.includes(n) ? spec.counts.join('にん か ') + 'にんで あそべるよ（あと ' + (spec.counts.find(c => c > n) - n) + 'にん）' : n >= min ? '1P の スマホで スタート（Enter でも はじまる）' : (min > 1 ? 'あと ' + (min - n) + 'にん さんか すると はじめられるよ' : 'スマホが なくても Enter で ためせるよ') });
       } else {
         spec.draw(dt);
         if (api.st === 'count') { const n = Math.ceil(3 - api.t); D.text(String(n), W / 2, H / 2, H * (0.3 - (api.t % 1) * 0.08), '#fff', 'center', INK); if (spec.countMsg) D.text(spec.countMsg, W / 2, H * 0.72, H * 0.05, '#fff', 'center', INK); }
         if (api.st === 'play' && api.t < 1) D.text('スタート！', W / 2, H / 2, H * 0.12, '#fff', 'center', INK);
+        if (api.st === 'tut') tutPanel(W, H);
         if (api.st === 'final' && api.final) D.result(W, H, api.final.title, api.final.rows, '1P の スマホで「もういちど」（Enter でも OK）', Math.min(1, api.t / 0.3));
       }
       home.hidden = !(api.st === 'lobby' || api.st === 'final');
       if (toast) { toast.t += dt; const a = Math.min(1, 2 - toast.t * 1.3); if (a <= 0) toast = null; else { cx.globalAlpha = a; D.text(toast.txt, W - 16, H - 30, H * 0.032, toast.c, 'right', INK); cx.globalAlpha = 1; } }
       D.soundHint(W, H);
     });
+    // れんしゅうの ひょう（だれが どこまで できたか）
+    function tutPanel(W, H) {
+      const ms = api.members.filter(m => !m.kb), n = ms.length, rh = H * 0.075, pw = Math.min(W * 0.86, H * 1.5), ph = H * 0.13 + n * rh + H * 0.05, x = (W - pw) / 2, y = H * 0.5 - ph / 2;
+      cx.globalAlpha = 0.95; D.panel(x, y, pw, ph); cx.globalAlpha = 1;
+      D.text('れんしゅう', W / 2, y + H * 0.045, H * 0.05); D.text('ぜんいん できたら しあい スタート！', W / 2, y + H * 0.095, H * 0.028, '#7a6a60');
+      ms.forEach((m, i) => {
+        const yy = y + H * 0.13 + i * rh + rh / 2, st = tutSteps(m), k = api.tut[m.pid] || 0, done = k >= st.length, h = tutHint[m.pid];
+        D.panel(x + pw * 0.03, yy - rh * 0.4, pw * 0.14, rh * 0.8, m.color, 10); D.text(m.name, x + pw * 0.1, yy, rh * 0.38, m.color === '#f5c518' ? INK : '#fff');
+        for (let j = 0; j < st.length; j++) { cx.beginPath(); cx.arc(x + pw * 0.21 + j * rh * 0.42, yy, rh * 0.14, 0, Math.PI * 2); cx.fillStyle = j < k ? '#30a46c' : j === k ? '#fff' : '#e6dccb'; cx.fill(); cx.lineWidth = 2; cx.strokeStyle = INK; cx.stroke(); }
+        const tx = x + pw * 0.21 + st.length * rh * 0.42;
+        if (done) D.text('OK！ みんなを まってるよ', tx, yy, rh * 0.36, '#30a46c', 'left');
+        else if (h && !h.good && h.t < 2.5) D.text(h.txt, tx, yy, rh * 0.34, '#e5484d', 'left');
+        else D.text(st[k], tx, yy, Math.min(rh * 0.34, (pw * 0.95 - tx + x) / Math.max(8, st[k].length) * 1.7), INK, 'left');
+      });
+    }
     return api;
   }
 
@@ -475,12 +528,12 @@ const PAD = (() => {
     const $ = i => document.getElementById(i);
     const P = { st: {}, ready: false };
     const net = join({ id, onWelcome: () => render(), onData: d => {
-      if (d.t === 'state') { P.st = d; render(); onState && onState(d); }
+      if (d.t === 'state') { P.raw = d; const v = d.st === 'tut' ? Object.assign({}, d, { st: 'play', tut: true }) : d; P.st = v; render(); onState && onState(v); }
       else if (d.t === 'calib') { sensors.calibrate(); onCalib && onCalib(); }
       else onData && onData(d);
     } });
     function render() {
-      const st = P.st, s = st.st || 'lobby';
+      const st = P.st, s = st.tut ? 'tut' : (st.st || 'lobby');
       if ($('ready')) $('ready').hidden = P.ready;
       gy.hidden = !P.ready;
       if ($('hostbox')) $('hostbox').hidden = !(P.ready && st.host && (s === 'lobby' || s === 'final'));
@@ -491,7 +544,9 @@ const PAD = (() => {
       else if (s === 'lobby') { msg = st.host ? 'みんな そろったら スタート' : '1P が スタートするのを まってね'; sub = msgs.lobby || ''; }
       else if (s === 'count') { msg = msgs.count || 'じゅんび…'; }
       else if (s === 'final') { msg = st.msg || 'おしまい！'; sub = st.host ? 'もういちど あそぶ？' : 'モニターを みてね'; }
-      if (s === 'play' || st.msg) { msg = st.msg || msg; sub = st.sub || sub; }
+      if (s === 'play' || (st.msg && s !== 'tut')) { msg = st.msg || msg; sub = st.sub || sub; }
+      if (s === 'tut') { const done = st.tutK >= st.tutN; msg = done ? 'れんしゅう OK！' : 'れんしゅう ' + (st.tutK + 1) + ' / ' + st.tutN; sub = done ? 'みんなが おわるのを まってね' : (st.tutHint ? st.tutHint + '　' : '') + st.tutText; }
+      document.body.classList.toggle('tutorial', s === 'tut');
       if ($('msg')) $('msg').textContent = msg; if ($('sub')) $('sub').textContent = sub;
     }
     if ($('ready')) $('ready').onclick = async () => {
@@ -516,26 +571,47 @@ const GAME_ID = 'wizard', HP = 100;
 const SP = { fire: { name: 'ほのお', color: '#ff7a2e', beats: 'ice' }, ice: { name: 'こおり', color: '#7fd3ff', beats: 'thunder' }, thunder: { name: 'かみなり', color: '#ffd23f', beats: 'fire' } };
 if (PAD.isPad) startPad(); else startMonitor();
 
-// かいた せんの かたちを みわける
-function classify(pts) {
-  if (pts.length < 6) return null;
+// かいた せんの かたちを みわける（あたらしい ばん）
+function classify(raw) {
+  if (raw.length < 5) return null;
   let len = 0, minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
-  for (let i = 0; i < pts.length; i++) { const [x, y] = pts[i]; minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); if (i) len += Math.hypot(x - pts[i - 1][0], y - pts[i - 1][1]); }
-  const diag = Math.hypot(maxx - minx, maxy - miny); if (diag < 40) return null;
-  const [sx, sy] = pts[0], [ex, ey] = pts[pts.length - 1], gap = Math.hypot(ex - sx, ey - sy);
-  // むきが かわった かいすう（ギザギザ）と、まがった かくどの ごうけい（まる）
-  const step = Math.max(1, pts.length / 40 | 0), q = pts.filter((_, i) => i % step === 0);
-  let turn = 0, rev = 0, prevA = null, prevSign = 0;
-  for (let i = 2; i < q.length; i++) {
-    const a1 = Math.atan2(q[i - 1][1] - q[i - 2][1], q[i - 1][0] - q[i - 2][0]), a2 = Math.atan2(q[i][1] - q[i - 1][1], q[i][0] - q[i - 1][0]);
-    let d = a2 - a1; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
-    turn += d; if (Math.abs(d) > 1.3) rev++;
-    const sgn = Math.sign(d); if (Math.abs(d) > 0.5) { if (prevSign && sgn !== prevSign) rev += 0.5; prevSign = sgn; }
+  for (let i = 0; i < raw.length; i++) { const [x, y] = raw[i]; minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); if (i) len += Math.hypot(x - raw[i - 1][0], y - raw[i - 1][1]); }
+  const diag = Math.hypot(maxx - minx, maxy - miny); if (diag < 40 || len < 50) return null;
+  // おなじ かんかくに ならべなおす（ゆびの はやさや ぶれの えいきょうを へらす）
+  const N = 32, stepL = len / (N - 1), q = [raw[0].slice()]; let acc = 0;
+  for (let i = 1; i < raw.length && q.length < N; i++) {
+    let [px, py] = raw[i - 1]; const [x, y] = raw[i]; let d = Math.hypot(x - px, y - py);
+    while (acc + d >= stepL && q.length < N) { const u = (stepL - acc) / d; px += (x - px) * u; py += (y - py) * u; q.push([px, py]); d = Math.hypot(x - px, y - py); acc = 0; }
+    acc += d;
   }
-  if (gap / len > 0.85) return 'ice';
-  if (gap < diag * 0.35 && Math.abs(turn) > 4.2) return 'fire';
-  if (rev >= 2.5) return 'thunder';
-  return gap < diag * 0.5 ? 'fire' : 'ice';
+  while (q.length < N) q.push(raw[raw.length - 1].slice());
+  // かるく ならして ぶれを けす（はしは そのまま）
+  for (let k = 0; k < 2; k++) { const c = q.map(p => p.slice()); for (let i = 1; i < N - 1; i++) { q[i][0] = (c[i - 1][0] + c[i][0] * 2 + c[i + 1][0]) / 4; q[i][1] = (c[i - 1][1] + c[i][1] * 2 + c[i + 1][1]) / 4; } }
+  // まがりかた
+  let sum = 0, abs = 0, corners = 0, flips = 0, lastSign = 0;
+  const ds = [];
+  for (let i = 2; i < N; i++) {
+    const a1 = Math.atan2(q[i - 1][1] - q[i - 2][1], q[i - 1][0] - q[i - 2][0]), a2 = Math.atan2(q[i][1] - q[i - 1][1], q[i][0] - q[i - 1][0]);
+    let d = a2 - a1; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; ds.push(d);
+  }
+  // 3こずつ まとめて みる（かどが 2つの てんに わかれても かぞえられる）
+  for (let i = 0; i < ds.length; i++) { sum += ds[i]; abs += Math.abs(ds[i]); }
+  for (let i = 0; i < ds.length; i++) {
+    const d2 = ds[i] + (ds[i + 1] || 0) + (ds[i + 2] || 0);
+    if (Math.abs(d2) > 1.2) { const sg = Math.sign(d2); corners++; if (lastSign && sg !== lastSign) flips++; lastSign = sg; i += 2; }
+  }
+  const [sx, sy] = q[0], [ex, ey] = q[N - 1], gap = Math.hypot(ex - sx, ey - sy);
+  const same = abs ? Math.abs(sum) / abs : 0;   // おなじ むきに まがっている わりあい
+  // まんなかから の きょりの ばらつき（まるは そろう）
+  let cx = 0, cy = 0; for (const [x, y] of q) { cx += x; cy += y; } cx /= N; cy /= N;
+  const rs = q.map(([x, y]) => Math.hypot(x - cx, y - cy)), rm = rs.reduce((a, b) => a + b, 0) / N, cv = Math.sqrt(rs.reduce((a, r) => a + (r - rm) * (r - rm), 0) / N) / (rm || 1);
+  if (gap / len > 0.8 && abs < 1.6) return 'ice';
+  if (Math.abs(sum) > 3.0 && same > 0.5) return 'fire';            // ぐるっと おなじ むきに まわった（だいたい 170ど いじょう）
+  if (Math.abs(sum) > 2.4 && cv < 0.4 && same > 0.4) return 'fire'; // まんなかからの きょりが そろっている
+  if (gap / len < 0.3 && cv < 0.45) return 'fire';                  // ほぼ とじた わっか（でこぼこでも まる）
+  if (corners >= 2 && flips >= 1 && same < 0.55) return 'thunder'; // かどで むきが いったり きたり
+  if (gap / len > 0.7) return 'ice';
+  return same > 0.4 ? 'fire' : corners >= 2 ? 'thunder' : null;
 }
 
 function startPad() {
@@ -551,7 +627,7 @@ function startPad() {
   function fit() { const r = bd.getBoundingClientRect(); if (bc.width !== (r.width | 0)) { bc.width = r.width | 0; bc.height = r.height | 0; } }
   function paint() {
     fit(); bx.clearRect(0, 0, bc.width, bc.height);
-    bx.strokeStyle = 'rgba(255,255,255,.12)'; bx.lineWidth = 2; bx.beginPath(); bx.arc(bc.width / 2, bc.height / 2, Math.min(bc.width, bc.height) * 0.38, 0, Math.PI * 2); bx.stroke();
+    bx.strokeStyle = 'rgba(255,255,255,.12)'; bx.lineWidth = 2; bx.beginPath(); bx.arc(bc.width / 2, bc.height / 2, Math.min(bc.width, bc.height) * 0.42, 0, Math.PI * 2); bx.stroke();
     bx.lineCap = bx.lineJoin = 'round'; bx.lineWidth = 10; bx.strokeStyle = spell ? SP[spell].color : '#c9b8ff';
     bx.beginPath(); pts.forEach(([x, y], i) => i ? bx.lineTo(x, y) : bx.moveTo(x, y)); bx.stroke();
     if (spell) { bx.font = 'bold 26px sans-serif'; bx.textAlign = 'center'; bx.fillStyle = '#fff'; bx.fillText('ふって はなて！', bc.width / 2, bc.height - 18); }
@@ -572,6 +648,11 @@ function startPad() {
 function startMonitor() {
   let G = {};
   const api = PAD.game({
+    tutorial: {
+      steps: ['まる を かいて、ふって ほのおを はなとう', 'まっすぐ の せんを かいて、ふって こおりを はなとう', 'ギザギザ を かいて、ふって かみなりを はなとう'],
+      check(p, d, k) { if (d.t !== 'cast' || !SP[d.k]) return false; const want = ['fire', 'ice', 'thunder'][k]; if (d.k === want) { const w = G.w[p.pid]; if (w) w.cast = 0.4; tutFx(p.pid, d.k); return true; } return SP[d.k].name + 'に なったよ。' + ['まる', 'まっすぐ', 'ギザギザ'][k] + 'を かいてね'; },
+      update(dt) { for (const f of G.fx) f.t += dt; G.fx = G.fx.filter(f => f.t < 0.5); for (const q of G.pops) q.t += dt; G.pops = G.pops.filter(q => q.t < 1); for (const pid in G.w) G.w[pid].cast -= dt; },
+    },
     id: GAME_ID, title: 'まほうつかい バトル', sub: 'まほうじんを かいて、つえの ように ふって はなて！（2〜4にん）', min: 2, countMsg: 'つえを かまえて！',
     init(members) {
       G = { w: {}, shots: [], fx: [], pops: [], winner: null, endT: -1, order: [] };
@@ -665,6 +746,7 @@ function startMonitor() {
   function burst(p, color, n, sp = 4) { for (let i = 0; i < n; i++) { const m = new T3.Mesh(new T3.SphereGeometry(0.07, 6, 4), new T3.MeshBasicMaterial({ color, transparent: true })); m.position.copy(p); V.scene.add(m); fx3.push({ m, v: new T3.Vector3((Math.random() - 0.5) * sp, Math.random() * sp * 0.8, (Math.random() - 0.5) * sp), t: 0 }); } }
   function shot3pos(s) { const a = pos3(s.from), b = pos3(s.to), u = Math.min(1, s.t / s.dur); const p = a.clone().lerp(b, u); p.y = 1.9 + Math.sin(u * Math.PI) * 1.6; return p; }
   // がめんの いち（2D の もじ用）。もとの コードが つかう なまえの まま
+  function tutFx(pid, k) { const [x, y] = posOf(pid); G.fx.push({ x, y: y - S.H * 0.1, t: 0, c: SP[k].color, big: true }); G.pops.push({ x, y: y - S.H * 0.25, txt: SP[k].name + '！', t: 0, c: SP[k].color }); PAD.sfx.noise({ dur: 0.5, f0: k === 'ice' ? 4000 : 1200, f1: k === 'thunder' ? 6000 : 600, vol: 0.25 }); }
   function posOf(pid) { const p = pos3(pid); const [x, y] = V.toScreen(p.x, p.y, p.z); return [x, y]; }
   function shotPos(s) { const p = shot3pos(s); const [x, y] = V.toScreen(p.x, p.y, p.z); return [x, y]; }
   function sync3D(dt) {

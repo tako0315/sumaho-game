@@ -10,6 +10,7 @@
   ・スマホで QRを よむ → ?room=XXXX つきで ひらき、コントローラー（せつめい・はじめるボタン）になる
   ・つなぎかた: PeerJS（WebRTC）。モニターの ID は "yukiri-" + 部屋コード
   ・スマホを ふった いきおい（加速度の山）を モニターへ おくる。モニターは それで みずを きる
+  ・はじめる と まず れんしゅう（ふる → つよく ふる）。できたら 3・2・1 で スタート（とばせない）
   ・https で ひらかないと スマホの うごきセンサーが つかえない（GitHub Pages なら OK）
   ・index.html は build.py が つくる。ここ（src.html）を なおして build.py を うごかす
 -->
@@ -178,13 +179,13 @@ function startPad() {
     if (!d || typeof d !== 'object') return;
     if (d.t === 'state') {
       state = d.st;
-      const live = state === 'play' || state === 'count';
+      const live = state === 'play' || state === 'count' || state === 'tut';
       $('live').hidden = !live && state !== 'result'; $('wt').parentNode.hidden = !live;
       $('tm').textContent = Math.ceil(d.time); $('bw').textContent = d.bowls;
       $('wt').style.width = Math.max(0, d.water) + '%';
       $('go').style.display = live ? 'none' : 'block'; $('shakebtn').style.display = live && !motionOk ? 'block' : 'none';
       $('go').textContent = state === 'result' ? 'もういちど' : 'はじめる';
-      $('msg').textContent = state === 'count' ? 'じゅんび…' : state === 'play' ? (d.water > 0 ? 'ふって！ふって！' : 'どんぶりへ！')
+      $('msg').textContent = state === 'tut' ? (d.tutK >= d.tutN ? 'れんしゅう OK！' : 'れんしゅう ' + (d.tutK + 1) + ' / ' + d.tutN + '：' + (d.tutHint && d.tutHint !== 'できた！' ? d.tutHint + ' ' : '') + d.tutText) : state === 'count' ? 'じゅんび…' : state === 'play' ? (d.water > 0 ? 'ふって！ふって！' : 'どんぶりへ！')
         : state === 'result' ? d.bowls + 'はい できた！' + (d.best ? '' : '') : 'つながったよ！';
     } else if (d.t === 'vibe') { if (navigator.vibrate) navigator.vibrate(d.ms || 60); }
     else if (d.t === 'sfx' && typeof SFX[d.n] === 'function' && d.n !== 'unlock') SFX[d.n](d.u);
@@ -203,7 +204,7 @@ function startPad() {
     if (inPeak && (m < TH * 0.6 || now - inPeak > 350)) { inPeak = 0; if (now - lastShake > 170) { lastShake = now; shake(peak); } }
   }
   function shake(p) {
-    if (state !== 'play') return;
+    if (state !== 'play' && state !== 'tut') return;
     p = Math.min(50, p); send({ t: 's', p });
     const f = $('flash'); f.style.transition = 'none'; f.style.opacity = 0.15 + 0.55 * Math.max(0, (p - 12) / 38); requestAnimationFrame(() => { f.style.transition = 'opacity .25s'; f.style.opacity = 0; });
   }
@@ -221,7 +222,7 @@ function startPad() {
   };
   // ジャイロ リセット: いまの もちかたを「とまっている」に しなおす（ふった つよさの きじゅん）
   $('gyro').onclick = () => { if (lastG) { grav[0] = lastG[0]; grav[1] = lastG[1]; grav[2] = lastG[2]; } inPeak = 0; SFX.tap(); if (navigator.vibrate) navigator.vibrate(40); $('gyro').textContent = 'リセット！'; setTimeout(() => { $('gyro').textContent = 'ジャイロ リセット'; }, 900); };
-  $('shakebtn').addEventListener('pointerdown', e => { e.preventDefault(); SFX.unlock(); shake(22); });
+  $('shakebtn').addEventListener('pointerdown', e => { e.preventDefault(); SFX.unlock(); shake(state === 'tut' ? 30 : 22); });
   document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'visible' && lock) try { lock = await navigator.wakeLock.request('screen'); } catch (e) {} });
   connect();
 }
@@ -286,13 +287,13 @@ function startMonitor() {
   function onPad(d) {
     if (!d || typeof d !== 'object') return;
     if (d.t === 'start') { if (G.st === 'ready' || G.st === 'result' || G.st === 'wait') startGame(); }
-    else if (d.t === 's') shake(+d.p || 0);
+    else if (d.t === 's') { if (G.st === 'tut') tutShake(+d.p || 0); else shake(+d.p || 0); }
     else if (d.t === 'hello') sendState(true);
   }
   let lastSent = 0;
   function sendState(force) {
     const now = performance.now(); if (!force && now - lastSent < 200) return; lastSent = now;
-    send({ t: 'state', st: G.st === 'wait' ? 'ready' : G.st, time: Math.max(0, G.time), bowls: G.bowls, water: Math.round(G.water), best: G.best });
+    send({ t: 'state', st: G.st === 'wait' ? 'ready' : G.st, time: Math.max(0, G.time), bowls: G.bowls, water: Math.round(G.water), best: G.best, tutK: G.tk || 0, tutN: TUT.length, tutText: TUT[Math.min(G.tk || 0, TUT.length - 1)].txt, tutHint: G.tutHintT < 2 ? G.tutHint : '' });
   }
 
   // ---- ゲームの じょうたい ----
@@ -304,7 +305,16 @@ function startMonitor() {
       flyMen: null, bowlFull: false, bowlSlide: 0, served: [], drops: [], rings: [], steam: [], pops: [], shakeT: 0, combo: 0 });
   }
   reset();
-  function startGame() { reset(); G.st = 'count'; G.pt = 0; sendState(true); }
+  // れんしゅう: スマホが つながっていたら、ふる → つよく ふる が できてから スタート
+  const TUT = [{ txt: 'スマホを ふってみよう（てぼを シャッ）', min: 12 }, { txt: 'つよく ふってみよう（つよいほど おゆが きれる）', min: 26 }];
+  function startGame() { reset(); G.st = conn ? 'tut' : 'count'; G.tk = 0; G.tutHint = ''; G.tutHintT = 0; G.pt = 0; sendState(true); }
+  function tutShake(p) {
+    const st = TUT[G.tk]; if (!st) return;
+    G.vy += (0.5 + 1.6 * Math.max(0, Math.min(1, (p - 12) / 38))) * H; G.shakeT = 0.25;
+    if (p >= st.min) { G.tk++; G.tutHint = 'できた！'; G.tutHintT = 0; sfx('serve'); send({ t: 'vibe', ms: 80 }); if (G.tk >= TUT.length) setTimeout(() => { if (G.st === 'tut') { G.st = 'count'; G.pt = 0; sendState(true); } }, 700); }
+    else { G.tutHint = 'もっと つよく！'; G.tutHintT = 0; sfx('shake', 0); }
+    sendState(true);
+  }
   function shake(p) {
     if (G.st !== 'play') return;
     p = Math.max(12, Math.min(50, p));
@@ -569,6 +579,7 @@ function startMonitor() {
     drawBG(); drawBowls(); drawTebo(); drawMenFlying(); drawSpill(); drawWater(); drawPops(); drawSound();
     if (G.st === 'wait') drawWait();
     else if (G.st === 'ready') drawCenter(['つながった！', 'スマホの「はじめる」を おしてね'], 'スマホに あそびかたが でているよ');
+    else if (G.st === 'tut') { G.tutHintT = (G.tutHintT || 0) + 1 / 60; const done = G.tk >= TUT.length; drawCenter([done ? 'れんしゅう OK！' : 'れんしゅう ' + (G.tk + 1) + ' / ' + TUT.length, done ? 'スタート！' : TUT[G.tk].txt], G.tutHint && G.tutHintT < 2 ? G.tutHint : 'できたら ゲーム スタート！'); }
     else if (G.st === 'count') { drawHUD(); const n = Math.ceil(3 - G.pt); text(String(n), W * 0.3, H * 0.5, H * (0.3 - (G.pt % 1) * 0.08), '#fff', 'center', INK); }
     else if (G.st === 'play') { drawHUD(); if (G.ph === 'shake' && G.pt < 1.6 && G.bowls === 0) text('スマホを ふって！', W * 0.3, H * 0.3, H * 0.08, '#fff', 'center', INK); }
     else if (G.st === 'result') { drawHUD(); drawResult(); }
@@ -579,9 +590,9 @@ function startMonitor() {
   // ---- キーボード（スマホが ない ときの ためし用） ----
   addEventListener('keydown', e => {
     if (e.code === 'Space') { e.preventDefault(); shake(e.shiftKey ? 48 : 24); }  // Shift＋スペースで つよく
-    else if (e.code === 'Enter') { if (G.st !== 'play' && G.st !== 'count') startGame(); }
+    else if (e.code === 'Enter') { if (G.st !== 'play' && G.st !== 'count' && G.st !== 'tut') startGame(); }
   });
-  window.__yukiri = { G, shake, startGame, code, isConn: () => !!conn };
+  window.__yukiri = { G, shake, startGame, code, isConn: () => !!conn, skipTut: () => { if (G.st === 'tut') { G.st = 'count'; G.pt = 0; sendState(true); } } };
 
   let last = performance.now();
   function loop(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; update(dt); draw(); requestAnimationFrame(loop); }

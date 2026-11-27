@@ -12,6 +12,7 @@
   ・ひょうめんちょうりょく: ふちを こえても すこし もりあがって もつ。もりあがった ぶんは ボーナス（さいだい +20）
   ・モニターは 3D（three.js）
   ・3かい: ジュース → ほそい グラス（はやい）→ ソーダ（あわが ふくらむ）
+  ・ソーダは あわの てっぺんで はんてい（あわも りょうに はいる）。とめた あと 1.2びょう、ジュースの 6% ぶん あわが ふえる。グラスの よこの メーターに みず・あわ・ふち・こぼれる せんが でる
 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
@@ -57,6 +58,9 @@ body:not(.pad) #gyro{display:none}
 #home{position:fixed;left:12px;top:10px;z-index:20;font-size:15px;font-weight:bold;color:var(--ink);background:#fffaf0;border:3px solid var(--ink);border-radius:99px;padding:6px 14px;text-decoration:none;box-shadow:0 3px 0 var(--ink)}
 body.pad #home{display:none}
 
+#tutskip{position:fixed;left:10px;bottom:10px;z-index:20;font:inherit;font-size:13px;font-weight:bold;color:var(--ink);background:#fff;border:3px solid var(--ink);border-radius:99px;padding:7px 12px;box-shadow:0 3px 0 var(--ink)}
+#tutskip[hidden]{display:none}
+
 :root{--head:#2e6f8e}
 #bottle{display:block;margin:4px auto}
 #stop{background:#e5484d;font-size:30px;padding:22px 0}
@@ -84,7 +88,7 @@ body.pad #home{display:none}
           <li>まっすぐに もどすか「とめる！」で ストップ。そそげるのは 1かいだけ</li>
           <li>とめても すこし おくれて でてくるよ。コップの ふちギリギリを ねらおう</li>
           <li>ふちを こえても すこしは もりあがって こぼれない（ひょうめんちょうりょく）。もりあがるほど ボーナス！</li>
-          <li>こぼれたら 0てん。ソーダは あわが ふくらむので ちゅうい！</li>
+          <li>こぼれたら 0てん。ソーダは あわも ふくめた たかさ（あわの てっぺん）で はんてい。とめた あとも あわが すこし ふえるので、すこし はやめに とめよう</li>
         </ol>
       </div>
     </div>
@@ -196,6 +200,13 @@ const PAD = (() => {
     return { me, send(o) { if (conn && conn.open) try { conn.send(o); } catch (e) {} }, keepAwake };
   }
 
+  // ブラウザごとの「さいしょから おとを だす」 せってい（1かい すれば おなじ サイトの ゲーム ぜんぶに きく）
+  const SOUND_HOW = (() => { const u = navigator.userAgent;
+    if (/Edg\//.test(u)) return 'つぎから さいしょから ならす: アドレスバー ひだりの かぎ →「このサイトのアクセス許可」→「メディアの自動再生」を「許可」';
+    if (/Firefox\//.test(u)) return 'つぎから さいしょから ならす: アドレスバー ひだりの アイコン →「自動再生」を「音声と動画を許可」';
+    if (/Safari\//.test(u) && !/Chrome\//.test(u)) return 'つぎから さいしょから ならす: メニュー「Safari」→「この Web サイトの設定」→「自動再生」を「すべての自動再生を許可」';
+    return 'つぎから さいしょから ならす: アドレスバー ひだりの アイコン →「サイトの設定」→「音声」を「許可」';
+  })();
   /* ---------- スマホ: センサー ---------- */
   const sensors = (() => {
     let asked = false, granted = false;
@@ -347,9 +358,12 @@ const PAD = (() => {
         const a = list.slice().sort((p, q) => desc ? q[key] - p[key] : p[key] - q[key]);
         a.forEach((r, i) => { r.place = i && a[i - 1][key] === r[key] ? a[i - 1].place : i + 1; }); return a;
       },
+      // おとが とまっている ときの あんない。ブラウザの サイト せってい で「おと／じどうさいせい」を きょかすると、つぎから さいしょから なる
       soundHint(W, H) {
-        if (sfx.ok()) return; const h = H * 0.055, w = h * 12.5, x = (W - w) / 2, y = H - h - 10;  // した まんなか
-        D.panel(x, y, w, h, '#fff3c4', 12); D.text('クリックすると おとが でるよ（いちらんから ひらくと さいしょから なる）', x + w / 2, y + h / 2, h * 0.34);
+        if (sfx.ok()) return; const h = H * 0.1, w = Math.min(W - 20, h * 9), x = (W - w) / 2, y = H - h - 10;  // した まんなか
+        D.panel(x, y, w, h, '#fff3c4', 12);
+        D.text('おとが とまっています。クリックすると なるよ', x + w / 2, y + h * 0.3, h * 0.24);
+        D.text(SOUND_HOW, x + w / 2, y + h * 0.7, Math.min(h * 0.21, w / SOUND_HOW.length * 1.8), '#7a4a2a');
       },
     };
     return D;
@@ -394,9 +408,11 @@ const PAD = (() => {
 
   /* ---------- モニター: ゲームの ながれ（ロビー → 3・2・1 → プレイ → けっか） ----------
      spec: { id, title, sub, min, max, bg, init(members), update(dt), draw(), onData(p, d), stateFor(p), onKey(e), resize(W, H) }
-     api.finish(title, rows) で けっか。rows: [{ color, a, b, hi }] */
+     api.finish(title, rows) で けっか。rows: [{ color, a, b, hi }]
+     れんしゅう（チュートリアル）: spec.tutorial = { steps: ['せつめい', ...] か (p) => [...], check(p, d, k) → true（できた）/ 'ヒント'（ちがう）/ false }
+       はじめる → れんしゅう → みんなが ぜんぶ できたら 3・2・1 → プレイ（とばせない） */
   function game(spec) {
-    const api = { st: 'lobby', t: 0, members: [], final: null }; let toast = null;
+    const api = { st: 'lobby', t: 0, members: [], final: null, tut: {} }; let toast = null; const TUT = spec.tutorial, tutHint = {};
     const { cx, S } = canvas(document.getElementById('cv'), (W, H) => spec.resize && spec.resize(W, H));
     const D = draw(cx); Object.assign(api, { cx, D, S });
     const min = spec.min || 1;
@@ -409,6 +425,7 @@ const PAD = (() => {
         if (d.t === 'start') { if (isHost(p) && (api.st === 'lobby' || api.st === 'final')) begin(); return; }
         if (d.t === 'lobby') { if (isHost(p) && api.st === 'final') { api.st = 'lobby'; push(); } return; }
         if (d.t === 'recal') { toast = { txt: p.name + ' ジャイロ リセット', t: 0, c: p.color }; spec.onRecal && spec.onRecal(p); return; }
+        if (api.st === 'tut') { tutData(p, d); return; }
         if (api.st === 'play' || spec.dataAlways) spec.onData && spec.onData(p, d);
       },
     });
@@ -418,16 +435,35 @@ const PAD = (() => {
     function begin() {
       const l = room.list();
       if (l.length < min) { if (min > 1 || !spec.keyboard) { sfx.bad(); return; } }
+      if (spec.counts && l.length && !spec.counts.includes(l.length)) { sfx.bad(); return; }  // あそべる にんずう（れい: [2, 4]）
       api.members = l.length ? l : [{ pid: 1, color: COLORS[0], cname: COLOR_NAMES[0], name: NAMES[0], kb: true, online: true }];
       api.final = null; api.t = 0; api.st = 'count';
-      spec.init(api.members); room.broadcast({ t: 'calib' }); push();
+      spec.init(api.members); room.broadcast({ t: 'calib' });
+      if (TUT) { api.st = 'tut'; api.tut = {}; for (const m of api.members) api.tut[m.pid] = m.kb ? 99 : 0; }
+      push();
     }
+    // ---- れんしゅう ----
+    const tutSteps = p => typeof TUT.steps === 'function' ? TUT.steps(p) : TUT.steps;
+    api.tutStep = pid => api.tut[pid] || 0;
+    function tutData(p, d) {
+      const k = api.tut[p.pid] || 0, steps = tutSteps(p); if (k >= steps.length) return;
+      const r = TUT.check(p, d, k);
+      if (r === true) {
+        api.tut[p.pid] = k + 1; tutHint[p.pid] = { txt: k + 1 >= steps.length ? 'OK！' : 'できた！', t: 0, good: true };
+        sfx.good(); room.send(p.pid, { t: 'vibe', ms: 80 }); push();
+        if (api.members.every(m => !api.alive(m) || (api.tut[m.pid] || 0) >= tutSteps(m).length)) setTimeout(() => { if (api.st === 'tut') endTut(); }, 700);
+      } else if (typeof r === 'string') { tutHint[p.pid] = { txt: r, t: 0 }; push(); }
+    }
+    api.skipTut = () => { if (api.st === 'tut') endTut(); };   // テスト よう（ふつうは とばせない）
+    function endTut() { api.st = 'count'; api.t = 0; if (TUT.calib !== false) room.broadcast({ t: 'calib' }); push(); }
     api.begin = begin;
     api.finish = (title, rows) => { api.st = 'final'; api.t = 0; api.final = { title, rows }; sfx.fanfare(); room.broadcast({ t: 'vibe', ms: 200 }); push(); };
     let lastPush = 0;
     function push(force = true) {
       const now = performance.now(); if (!force && now - lastPush < 300) return; lastPush = now;
-      for (const p of room.list()) { let x = {}; try { x = spec.stateFor ? spec.stateFor(p) || {} : {}; } catch (e) { console.error(e); } room.send(p.pid, Object.assign({ t: 'state', st: api.st, host: isHost(p) }, x)); }
+      for (const p of room.list()) { let x = {}; try { x = spec.stateFor ? spec.stateFor(p) || {} : {}; } catch (e) { console.error(e); }
+        if (api.st === 'tut') { const st = tutSteps(p), k = api.tut[p.pid] || 0, h = tutHint[p.pid]; Object.assign(x, { tutK: k, tutN: st.length, tutText: st[Math.min(k, st.length - 1)], tutHint: h && !h.good && h.t < 2.5 ? h.txt : '' }); }
+        room.send(p.pid, Object.assign({ t: 'state', st: api.st, host: isHost(p) }, x)); }
     }
     api.push = push;
     api.isHost = isHost;
@@ -444,22 +480,39 @@ const PAD = (() => {
         const n = Math.ceil(3 - api.t), pr = Math.ceil(3 - (api.t - dt)); if (n !== pr && n > 0) sfx.count();
         if (api.t >= 3) { api.st = 'play'; api.t = 0; sfx.go(); spec.onPlay && spec.onPlay(); push(); }
       } else if (api.st === 'play') { spec.update(dt); push(false); }
+      else if (api.st === 'tut') { TUT.update && TUT.update(dt); for (const k in tutHint) tutHint[k].t += dt; }
       cx.clearRect(0, 0, W, H);
       if (spec.bg) spec.bg(W, H); else { cx.fillStyle = '#efe3cc'; cx.fillRect(0, 0, W, H); }
       if (api.st === 'lobby') {
         const n = room.count();
-        D.lobby(room, W, H, { title: spec.title, sub: spec.sub, min,
-          hint: n >= min ? '1P の スマホで スタート（Enter でも はじまる）' : (min > 1 ? 'あと ' + (min - n) + 'にん さんか すると はじめられるよ' : 'スマホが なくても Enter で ためせるよ') });
+        D.lobby(room, W, H, { title: spec.title, sub: spec.sub, min: spec.counts && n >= min && !spec.counts.includes(n) ? 99 : min,
+          hint: spec.counts && n >= min && !spec.counts.includes(n) ? spec.counts.join('にん か ') + 'にんで あそべるよ（あと ' + (spec.counts.find(c => c > n) - n) + 'にん）' : n >= min ? '1P の スマホで スタート（Enter でも はじまる）' : (min > 1 ? 'あと ' + (min - n) + 'にん さんか すると はじめられるよ' : 'スマホが なくても Enter で ためせるよ') });
       } else {
         spec.draw(dt);
         if (api.st === 'count') { const n = Math.ceil(3 - api.t); D.text(String(n), W / 2, H / 2, H * (0.3 - (api.t % 1) * 0.08), '#fff', 'center', INK); if (spec.countMsg) D.text(spec.countMsg, W / 2, H * 0.72, H * 0.05, '#fff', 'center', INK); }
         if (api.st === 'play' && api.t < 1) D.text('スタート！', W / 2, H / 2, H * 0.12, '#fff', 'center', INK);
+        if (api.st === 'tut') tutPanel(W, H);
         if (api.st === 'final' && api.final) D.result(W, H, api.final.title, api.final.rows, '1P の スマホで「もういちど」（Enter でも OK）', Math.min(1, api.t / 0.3));
       }
       home.hidden = !(api.st === 'lobby' || api.st === 'final');
       if (toast) { toast.t += dt; const a = Math.min(1, 2 - toast.t * 1.3); if (a <= 0) toast = null; else { cx.globalAlpha = a; D.text(toast.txt, W - 16, H - 30, H * 0.032, toast.c, 'right', INK); cx.globalAlpha = 1; } }
       D.soundHint(W, H);
     });
+    // れんしゅうの ひょう（だれが どこまで できたか）
+    function tutPanel(W, H) {
+      const ms = api.members.filter(m => !m.kb), n = ms.length, rh = H * 0.075, pw = Math.min(W * 0.86, H * 1.5), ph = H * 0.13 + n * rh + H * 0.05, x = (W - pw) / 2, y = H * 0.5 - ph / 2;
+      cx.globalAlpha = 0.95; D.panel(x, y, pw, ph); cx.globalAlpha = 1;
+      D.text('れんしゅう', W / 2, y + H * 0.045, H * 0.05); D.text('ぜんいん できたら しあい スタート！', W / 2, y + H * 0.095, H * 0.028, '#7a6a60');
+      ms.forEach((m, i) => {
+        const yy = y + H * 0.13 + i * rh + rh / 2, st = tutSteps(m), k = api.tut[m.pid] || 0, done = k >= st.length, h = tutHint[m.pid];
+        D.panel(x + pw * 0.03, yy - rh * 0.4, pw * 0.14, rh * 0.8, m.color, 10); D.text(m.name, x + pw * 0.1, yy, rh * 0.38, m.color === '#f5c518' ? INK : '#fff');
+        for (let j = 0; j < st.length; j++) { cx.beginPath(); cx.arc(x + pw * 0.21 + j * rh * 0.42, yy, rh * 0.14, 0, Math.PI * 2); cx.fillStyle = j < k ? '#30a46c' : j === k ? '#fff' : '#e6dccb'; cx.fill(); cx.lineWidth = 2; cx.strokeStyle = INK; cx.stroke(); }
+        const tx = x + pw * 0.21 + st.length * rh * 0.42;
+        if (done) D.text('OK！ みんなを まってるよ', tx, yy, rh * 0.36, '#30a46c', 'left');
+        else if (h && !h.good && h.t < 2.5) D.text(h.txt, tx, yy, rh * 0.34, '#e5484d', 'left');
+        else D.text(st[k], tx, yy, Math.min(rh * 0.34, (pw * 0.95 - tx + x) / Math.max(8, st[k].length) * 1.7), INK, 'left');
+      });
+    }
     return api;
   }
 
@@ -470,12 +523,12 @@ const PAD = (() => {
     const $ = i => document.getElementById(i);
     const P = { st: {}, ready: false };
     const net = join({ id, onWelcome: () => render(), onData: d => {
-      if (d.t === 'state') { P.st = d; render(); onState && onState(d); }
+      if (d.t === 'state') { P.raw = d; const v = d.st === 'tut' ? Object.assign({}, d, { st: 'play', tut: true }) : d; P.st = v; render(); onState && onState(v); }
       else if (d.t === 'calib') { sensors.calibrate(); onCalib && onCalib(); }
       else onData && onData(d);
     } });
     function render() {
-      const st = P.st, s = st.st || 'lobby';
+      const st = P.st, s = st.tut ? 'tut' : (st.st || 'lobby');
       if ($('ready')) $('ready').hidden = P.ready;
       gy.hidden = !P.ready;
       if ($('hostbox')) $('hostbox').hidden = !(P.ready && st.host && (s === 'lobby' || s === 'final'));
@@ -486,7 +539,9 @@ const PAD = (() => {
       else if (s === 'lobby') { msg = st.host ? 'みんな そろったら スタート' : '1P が スタートするのを まってね'; sub = msgs.lobby || ''; }
       else if (s === 'count') { msg = msgs.count || 'じゅんび…'; }
       else if (s === 'final') { msg = st.msg || 'おしまい！'; sub = st.host ? 'もういちど あそぶ？' : 'モニターを みてね'; }
-      if (s === 'play' || st.msg) { msg = st.msg || msg; sub = st.sub || sub; }
+      if (s === 'play' || (st.msg && s !== 'tut')) { msg = st.msg || msg; sub = st.sub || sub; }
+      if (s === 'tut') { const done = st.tutK >= st.tutN; msg = done ? 'れんしゅう OK！' : 'れんしゅう ' + (st.tutK + 1) + ' / ' + st.tutN; sub = done ? 'みんなが おわるのを まってね' : (st.tutHint ? st.tutHint + '　' : '') + st.tutText; }
+      document.body.classList.toggle('tutorial', s === 'tut');
       if ($('msg')) $('msg').textContent = msg; if ($('sub')) $('sub').textContent = sub;
     }
     if ($('ready')) $('ready').onclick = async () => {
@@ -508,6 +563,7 @@ const PAD = (() => {
 <script>
 'use strict';
 const GAME_ID = 'pour';
+const RISE = 0.06, RISE_T = 1.2;   // ソーダ: とめた あと RISE_T びょうで ジュースの RISE ぶん あわが ふえる
 const START_ANG = 70, STOP_ANG = 45;   // この かくど いじょうで そそぎ はじめ、これより もどすと とまる
 // r0/r1/h: グラスの そこ・ふちの はんけいと たかさ。rate は 1びょうで ふえる パーセント。cap: ここを こえると こぼれる（100 = ふち。そのうえは ひょうめんちょうりょくで もりあがる）
 const ROUNDS = [
@@ -543,6 +599,10 @@ function startPad() {
 function startMonitor() {
   let G = {}; const ang = {};
   const api = PAD.game({
+    tutorial: {
+      steps: ['スマホを たてに もって、よこに かたむけて そそぐ まね', 'スマホを もどして とめてみよう'],
+      check(p, d, k) { if (d.t === 'ang') ang[p.pid] = +d.a || 0; return k === 0 ? d.t === 'ang' && +d.a > START_ANG : (d.t === 'ang' && +d.a < STOP_ANG) || d.t === 'stop'; },
+    },
     id: GAME_ID, title: 'こぼれる ギリギリ', sub: 'いちどだけ そそいで、ふちから もりあがる ギリギリで とめろ！（1〜4にん）', keyboard: true, countMsg: 'スマホを たてに もってね',
     init(members) { G = { round: 0, phase: 'pour', pt: 0, total: {}, pl: {} }; for (const p of members) { G.total[p.pid] = 0; ang[p.pid] = 0; } startRound(); },
     onData(p, d) { if (d.t === 'ang') ang[p.pid] = +d.a || 0; else if (d.t === 'stop') stop(p.pid); },
@@ -551,7 +611,7 @@ function startMonitor() {
       if (api.st === 'final') { const r = ranking().find(r => r.pid === p.pid); return { msg: r ? (r.place === 1 ? 'ゆうしょう！' : r.place + 'い') + ' ' + r.pts + 'てん' : '' }; }
       if (G.phase === 'show') return { msg: s.over ? 'こぼれた… 0てん' : s.score + 'てん！', sub: s.bonus ? 'ひょうめんちょうりょく ボーナス +' + s.bonus : 'つぎを まってね', pouring: false };
       if (s.state === 'wait') return { msg: 'かたむけて そそげ！', sub: 'いちど はじめたら いきおいは かえられないよ', pouring: false };
-      if (s.state === 'pour') return { msg: 'そそいでる…！', sub: 'もどすか「とめる！」で ストップ', pouring: true };
+      if (s.state === 'pour') return { msg: 'そそいでる…！', sub: ROUNDS[G.round].foam ? 'とめた あとも あわが ふえる！ すこし はやめに とめよう' : 'もどすか「とめる！」で ストップ', pouring: true };
       return { msg: s.over ? 'こぼれた…' : 'ストップ！', sub: 'ほかの ひとを まってね', pouring: false };
     },
     update(dt) {
@@ -566,17 +626,17 @@ function startMonitor() {
           if (s.state === 'pour') rate = R.rate;
           else if (s.state === 'tail') { s.tail -= dt; rate = R.rate * Math.max(0, s.tail / 0.35); if (s.tail <= 0) { s.state = 'done'; api.push(); } }
           s.flow = s.over ? 0 : rate;
-          if (rate > 0) { s.amt += rate * dt; if (R.foam) s.foam = Math.min(30, s.foam + rate * dt * 0.55); s.sndT -= dt; if (s.sndT <= 0) { s.sndT = 0.08; PAD.sfx.noise({ dur: 0.12, f0: 500 + s.amt * 12, f1: 400 + s.amt * 12, q: 3, vol: 0.08 }); } }
-          else if (R.foam && s.foam > 0) s.foam = Math.max(0, s.foam - dt * 6);   // あわが しぼむ
+          if (rate > 0) { s.amt += rate * dt; if (R.foam) { s.foam += rate * dt * 0.25; s.riseT = 0; } s.sndT -= dt; if (s.sndT <= 0) { s.sndT = 0.08; PAD.sfx.noise({ dur: 0.12, f0: 500 + s.amt * 12, f1: 400 + s.amt * 12, q: 3, vol: 0.08 }); } }
+          else if (R.foam && s.state !== 'wait' && !s.over && (s.riseT || 0) < RISE_T) { s.riseT = (s.riseT || 0) + dt; s.foam += s.amt * RISE / RISE_T * dt; }   // とめた あとも あわが ふえる（ジュースの 6%）
           // ひょうめんちょうりょく: ふちを こえても すこしだけ もりあがって もつ。R.cap を こえたら こぼれる
           if (!s.over && s.amt + s.foam > R.cap) { s.over = true; s.overT = 0; s.state = 'done'; s.flow = 0; PAD.sfx.bad(); PAD.sfx.noise({ dur: 0.5, f0: 900, f1: 300, vol: 0.3 }); api.room.send(p.pid, { t: 'vibe', ms: 300 }); api.push(); }
           if (s.over) s.overT += dt;
           if (!s.over && s.amt > 100 && !s.domeSnd) { s.domeSnd = true; PAD.sfx.tone({ f0: 1400, f1: 1800, dur: 0.12, vol: 0.08, type: 'sine' }); }
         }
         if (G.pt > 30) for (const p of api.members) { const s = G.pl[p.pid]; if (s.state === 'wait' || s.state === 'pour') stop(p.pid); }
-        if (api.members.every(p => G.pl[p.pid].state === 'done' || !api.alive(p)) && api.members.every(p => G.pl[p.pid].foam < 1 || G.pl[p.pid].over)) {
+        if (api.members.every(p => G.pl[p.pid].state === 'done' || !api.alive(p)) && api.members.every(p => !R.foam || G.pl[p.pid].over || G.pl[p.pid].state === 'wait' || (G.pl[p.pid].riseT || 0) >= RISE_T)) {
           G.phase = 'show'; G.pt = 0;
-          for (const p of api.members) { const s = G.pl[p.pid]; s.bonus = !s.over && s.amt > 100 ? Math.round((s.amt - 100) / (R.cap - 100) * 20) : 0; s.score = s.over ? 0 : Math.round(Math.min(100, s.amt)) + s.bonus; G.total[p.pid] += s.score; }
+          for (const p of api.members) { const s = G.pl[p.pid], v = s.amt + s.foam; s.bonus = !s.over && v > 100 ? Math.round((v - 100) / (R.cap - 100) * 20) : 0; s.score = s.over ? 0 : Math.round(Math.min(100, v)) + s.bonus; G.total[p.pid] += s.score; }   // ソーダは あわも ふくめた たかさで はんてい
           const best = Math.max(...api.members.map(p => G.pl[p.pid].score)); best >= 100 ? PAD.sfx.fanfare() : PAD.sfx.good(); api.push();
         }
       } else if (G.phase === 'show' && G.pt > 3.8) {
@@ -626,7 +686,15 @@ function startMonitor() {
     const lmat = std(R.color, { roughness: 0.25, transparent: true, opacity: 0.92 });
     const liquid = new T3.Mesh(new T3.CylinderGeometry(1, 1, 1, 40), lmat); liquid.renderOrder = 1; g.add(liquid);
     const dome = new T3.Mesh(new T3.SphereGeometry(1, 40, 12, 0, Math.PI * 2, 0, Math.PI / 2), lmat); dome.renderOrder = 1; g.add(dome);
-    const foam = new T3.Mesh(new T3.CylinderGeometry(1, 1, 1, 40), std('#ffffff', { roughness: 0.9 })); g.add(foam);
+    const foam = new T3.Mesh(new T3.CylinderGeometry(1, 1, 1, 40), std('#fffdf5', { roughness: 0.9 })); g.add(foam);
+    // あわの うえの もこもこ と、ジュースの なかを のぼる つぶ
+    const puffs = [], bubs = [];
+    if (R.foam) {
+      const pm = std('#ffffff', { roughness: 0.95 });
+      for (let i = 0; i < 18; i++) { const m = new T3.Mesh(new T3.SphereGeometry(1, 10, 8), pm); m.userData = { a: i * 2.4, k: (i % 3) / 3, r: 0.09 + (i % 4) * 0.025 }; g.add(m); puffs.push(m); }
+      const bm = std('#ffffff', { transparent: true, opacity: 0.75, roughness: 0.2 });
+      for (let i = 0; i < 16; i++) { const m = new T3.Mesh(new T3.SphereGeometry(0.035 + (i % 3) * 0.015, 8, 6), bm); m.userData = { a: i * 1.7, k: Math.random(), sp: 0.5 + Math.random() * 0.6 }; m.renderOrder = 1; g.add(m); bubs.push(m); }
+    }
     const spill = new T3.Mesh(new T3.CylinderGeometry(d.r1 + 0.03, d.r0 + 0.03, d.h, 40, 1, true), std(R.color, { transparent: true, opacity: 0.55, side: T3.DoubleSide, depthWrite: false })); spill.position.y = d.h / 2; g.add(spill);
     const puddle = new T3.Mesh(new T3.CircleGeometry(1, 40), std(R.color, { roughness: 0.2 })); puddle.rotation.x = -Math.PI / 2; puddle.position.y = 0.01; g.add(puddle);
     // ボトル（くちが じく）
@@ -636,7 +704,7 @@ function startMonitor() {
     const neck = new T3.Mesh(new T3.CylinderGeometry(0.11, 0.12, 0.25, 16), std('#ffffff', { transparent: true, opacity: 0.7 })); neck.position.y = 0.05; bottle.add(neck);
     const label = new T3.Mesh(new T3.CylinderGeometry(0.33, 0.33, 0.5, 24, 1, true), std(color)); label.position.y = 1.1; bottle.add(label);
     const stream = new T3.Mesh(new T3.CylinderGeometry(1, 1, 1, 12), lmat); g.add(stream);
-    return { g, d, liquid, dome, foam, spill, puddle, bottle, stream };
+    return { g, d, liquid, dome, foam, spill, puddle, bottle, stream, puffs, bubs };
   }
   function build(R, list) {
     for (const k in C3) { V.scene.remove(C3[k].g); delete C3[k]; }
@@ -661,6 +729,10 @@ function startMonitor() {
       c.dome.scale.set(d.r1 * (1 + wob), 0.02 + over * 0.2, d.r1 * (1 + wob)); c.dome.position.y = d.h;
       const fh = s.foam / 100 * (d.h - 0.06); c.foam.visible = s.foam > 0.5; c.foam.scale.set(1, Math.max(0.001, fh), 1); c.foam.position.y = h + 0.06 + fh / 2;
       c.foam.geometry.dispose(); const ft = d.r0 + (d.r1 - d.r0) * Math.min(1, lv + s.foam / 100); c.foam.geometry = new T3.CylinderGeometry(Math.min(d.r1, ft) - 0.02, rt - 0.02, 1, 40);
+      // もこもこ: あわの てっぺんに ならべる。のぼる つぶ: ジュースの なかで したから うえへ
+      const ftop = h + 0.06 + fh, frad = Math.min(d.r1, ft) - 0.08;
+      for (const m of c.puffs) { const u = m.userData, on = s.foam > 0.5 && !s.over; m.visible = on; if (!on) continue; const rr = frad * (0.25 + u.k * 0.75), sc = u.r * Math.min(1, s.foam / 6) * (1 + Math.sin(t * 6 + u.a) * 0.12); m.scale.setScalar(sc); m.position.set(Math.cos(u.a) * rr, ftop + sc * 0.2, Math.sin(u.a) * rr); }
+      for (const m of c.bubs) { const u = m.userData, on = s.amt > 3 && !s.over && (s.flow > 0 || s.foam > 0.5); m.visible = on; if (!on) continue; u.k = (u.k + u.sp * 0.016 * (s.flow > 0 ? 1.6 : 0.8)) % 1; const yy = 0.1 + u.k * Math.max(0.01, h - 0.08), rr = (d.r0 + (d.r1 - d.r0) * yy / d.h) * 0.6; m.position.set(Math.cos(u.a) * rr, yy, Math.sin(u.a) * rr); }
       c.spill.visible = s.over; c.puddle.visible = s.over; if (s.over) { const u = Math.min(1, s.overT / 0.6); c.puddle.scale.setScalar(d.r1 * (1 + u * 1.2)); c.spill.material.opacity = 0.55 * (1 - Math.max(0, s.overT - 1.5) / 2); }
       // ボトル: くちを グラスの ちょっと うえ・よこに
       const pour = s.state === 'pour' || s.state === 'tail', a = pour ? Math.max(100, Math.min(160, s.ang)) : Math.max(55, Math.min(START_ANG - 5, s.ang));
@@ -670,6 +742,20 @@ function startMonitor() {
       if (s.flow > 0) { const w = 0.03 + s.flow * 0.0018, len = d.h + 0.9 - top; c.stream.scale.set(w, len, w); c.stream.position.set(-d.r1 * 0.25, top + len / 2, 0); }
     }
   }
+  // グラスの よこの メーター: ジュース（いろ）＋あわ（しろ）、ふち＝100、あかい せん＝こぼれる
+  function foamMeter(c, s, R) {
+    const d = c.d, x3 = c.g.position.x + d.r1 + 0.3, [mx, y0] = V.toScreen(x3, 0.06, 0), [, y100] = V.toScreen(x3, d.h, 0);
+    const per = (y0 - y100) / 100, bw = Math.max(14, per * 8), yc = y0 - per * R.cap, top = yc - per * 4;
+    cx.fillStyle = 'rgba(255,255,255,.75)'; D.rr(mx - bw / 2, top, bw, y0 - top, 6); cx.fill();
+    const a = Math.min(R.cap + 4, s.amt), f = Math.min(R.cap + 4 - a, s.foam);
+    cx.fillStyle = R.color; cx.fillRect(mx - bw / 2 + 2, y0 - a * per, bw - 4, a * per);
+    if (f > 0) { cx.fillStyle = '#ffffff'; cx.fillRect(mx - bw / 2 + 2, y0 - (a + f) * per, bw - 4, f * per); cx.fillStyle = '#9cc8e8'; for (let k = 0; k < f / 3; k++) { cx.beginPath(); cx.arc(mx + ((k * 7) % 3 - 1) * bw * 0.22, y0 - (a + 1.5 + k * 3) * per, Math.max(1.5, bw * 0.1), 0, Math.PI * 2); cx.fill(); } }
+    cx.lineWidth = 3; cx.strokeStyle = INK; D.rr(mx - bw / 2, top, bw, y0 - top, 6); cx.stroke();
+    cx.lineWidth = 2; cx.beginPath(); cx.moveTo(mx - bw / 2 - 6, y100); cx.lineTo(mx + bw / 2 + 6, y100); cx.stroke();
+    cx.strokeStyle = '#e5484d'; cx.lineWidth = 4; cx.beginPath(); cx.moveTo(mx - bw / 2 - 8, yc); cx.lineTo(mx + bw / 2 + 8, yc); cx.stroke();
+    D.text('ふち', mx + bw / 2 + 10, y100 + 2, 13, INK, 'left'); D.text('こぼれる', mx + bw / 2 + 10, yc - 12, 13, '#e5484d', 'left');
+    if (f > 1) D.text('あわ', mx - bw / 2 - 8, y0 - (a + f / 2) * per, 14, INK, 'right');
+  }
   function drawScene() {
     const W = S.W, H = S.H, n = api.members.length, R = ROUNDS[Math.min(G.round, ROUNDS.length - 1)];
     sync3D(false);
@@ -677,21 +763,25 @@ function startMonitor() {
     V.camera.position.set(0, R.h * 0.9 + dist * 0.2, dist); V.camera.lookAt(0, R.h * 0.75, 0); V.render();
     cx.clearRect(0, 0, W, H);
     D.text((Math.min(G.round, ROUNDS.length - 1) + 1) + 'かいめ：' + R.name, W / 2, H * 0.06, H * 0.055, '#fff', 'center', INK);
-    D.text('ふちから すこし もりあがるまで だいじょうぶ（ひょうめんちょうりょく）。こぼれたら 0てん', W / 2, H * 0.125, H * 0.03, '#7a6a60');
+    if (R.foam) D.text('ソーダは あわも ふくめた たかさで はんてい。とめた あとも あわが すこし ふえるよ', W / 2, H * 0.125, H * 0.032, '#c0582c');
+    else D.text('ふちから すこし もりあがるまで だいじょうぶ（ひょうめんちょうりょく）。こぼれたら 0てん', W / 2, H * 0.125, H * 0.03, '#7a6a60');
+    if (R.foam && G.phase === 'pour' && G.pt < 3.5) { cx.globalAlpha = Math.min(1, (3.5 - G.pt) * 2); D.panel(W * 0.2, H * 0.3, W * 0.6, H * 0.2, '#ffffff'); D.text('ソーダは あわが ぶくぶく ふくらむ！', W / 2, H * 0.37, H * 0.05, INK); D.text('とめた あとも あわが すこし ふえる。あわの てっぺんで はんてい！', W / 2, H * 0.44, H * 0.035, '#c0582c'); cx.globalAlpha = 1; }
     api.members.forEach((p, i) => {
       const s = G.pl[p.pid], c = C3[p.pid]; if (!s || !c) return;
       const gx = c.g.position.x, [sx, sy] = V.toScreen(gx, -0.1, 1.2), [, my] = V.toScreen(gx, R.h * 0.45, 0), pw = Math.min(W / n * 0.8, H * 0.4);
       D.panel(sx - pw / 2, H * 0.84, pw, H * 0.11, p.color);
       const tc = p.color === '#f5c518' ? INK : '#fff';
       D.text(p.name + '  ' + (G.total[p.pid] || 0) + 'てん', sx, H * 0.895, H * 0.042, tc);
+      if (R.foam) foamMeter(c, s, R);
       if (s.over) D.text('こぼれた！', sx, my, H * 0.06, '#fff', 'center', INK);
+      else if (R.foam && s.foam > 1 && G.phase === 'pour' && (s.state === 'pour' || (s.riseT || 0) < RISE_T)) D.text(s.state === 'done' || s.state === 'tail' ? 'あわが ふえてる…' : 'あわ ぶくぶく！', sx, my, H * 0.04, '#fff', 'center', '#3d6bd6');
       else if (G.phase === 'show') { D.text(s.score + 'てん', sx, my, H * 0.08, s.score >= 100 ? '#ffd23f' : '#fff', 'center', INK); if (s.bonus) D.text('もりあがり +' + s.bonus, sx, my + H * 0.075, H * 0.04, '#fff', 'center', INK); }
       else if (s.state === 'wait') D.text('かたむけて！', sx, my, H * 0.04, '#fff', 'center', INK);
       else if (s.state === 'done') D.text('ストップ', sx, my, H * 0.045, '#fff', 'center', INK);
       else if (s.amt > 100) D.text('もりあがってる…！', sx, my, H * 0.04, '#ffd23f', 'center', INK);
     });
   }
-  window.__game = api; window.__end = () => { G.round = ROUNDS.length - 1; G.phase = 'show'; G.pt = 9; };
+  window.__game = api; window.__end = () => { G.round = ROUNDS.length - 1; G.phase = 'show'; G.pt = 9; }; window.__round = r => { G.round = r; startRound(); };
 }
 </script>
 </body>
