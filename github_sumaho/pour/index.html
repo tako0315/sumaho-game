@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>かたむけて そそげ</title>
+<!--
+  かたむけて そそげ（1〜4にん）
+  ・スマホを ボトルに みたてて たてに もち、かたむけると モニターの グラスに のみものが はいる
+  ・せんの ところで「できた！」。ぴったりほど こうとくてん。あふれたら 0てん
+  ・3かい: ジュース → ぴったり → カクテル（2しょく かさねる）
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<style>
+/* PAD きょうつう: モニターは キャンバス 1まい、スマホは #pad の なか */
+:root{--ink:#3a2328;--paper:#fffaf0;--ok:#2f9e5b;--blue:#4a9fe0;--me:#3a2328;--head:#3a2328}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;color:var(--ink);font-family:"Hiragino Maru Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;overflow:hidden}
+canvas#cv{display:block;position:fixed;inset:0;width:100%;height:100%}
+#pad{display:none;position:fixed;inset:0;overflow-y:auto;background:var(--paper);user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+body.pad{background:var(--paper)}
+body.pad #pad{display:block}
+body.pad #cv{display:none}
+#pad header{background:var(--head);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:5px solid var(--me)}
+#pad header h1{margin:0;font-size:24px;letter-spacing:.06em}
+#badge{margin-left:auto;font-size:15px;font-weight:bold;background:#7a6a60;padding:5px 12px;border-radius:99px;border:2px solid #fff}
+#pad main{padding:16px;max-width:520px;margin:0 auto}
+.card{background:#fff;border:3px solid var(--ink);border-radius:16px;padding:14px 16px;margin-bottom:14px;box-shadow:0 4px 0 var(--ink)}
+.card h2{margin:0 0 8px;font-size:19px}
+ol.how{margin:0;padding:0;list-style:none;counter-reset:n}
+ol.how li{counter-increment:n;display:flex;gap:10px;align-items:flex-start;padding:6px 0;font-size:16px;line-height:1.45}
+ol.how li::before{content:counter(n);flex:none;width:28px;height:28px;border-radius:50%;background:var(--me);color:#fff;border:3px solid var(--ink);display:grid;place-items:center;font-weight:bold;font-size:14px}
+.note{font-size:14px;line-height:1.5;background:#fff3c4;border:2px dashed #c9a227;border-radius:12px;padding:10px 12px;margin-bottom:14px}
+button.big{display:block;width:100%;font:inherit;font-size:24px;font-weight:bold;letter-spacing:.08em;color:#fff;background:var(--ok);border:3px solid var(--ink);border-radius:18px;padding:16px 0;box-shadow:0 6px 0 var(--ink);margin:6px 0 16px}
+button.big:active{transform:translateY(4px);box-shadow:0 2px 0 var(--ink)}
+button.big:disabled{background:#b9b1a8}
+button.sub{font:inherit;font-size:16px;font-weight:bold;color:var(--ink);background:#fff;border:3px solid var(--ink);border-radius:14px;padding:10px 14px;box-shadow:0 4px 0 var(--ink)}
+button.sub:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.seg{display:flex;gap:10px;margin-bottom:12px}
+.seg button{flex:1;font:inherit;font-size:18px;font-weight:bold;padding:14px 4px;border:3px solid var(--ink);border-radius:14px;background:#fff;color:var(--ink);box-shadow:0 4px 0 var(--ink)}
+.seg button.on{background:var(--me);color:#fff}
+.msg{font-size:21px;font-weight:bold;text-align:center;margin:2px 0 6px}
+.small{font-size:14px;color:#7a6a60;text-align:center;line-height:1.5}
+#conn{text-align:center;padding:40px 16px;font-size:20px;line-height:1.6}
+[hidden]{display:none!important}
+
+:root{--head:#2e6f8e}
+#bottle{display:block;margin:4px auto}
+#done{background:#e5484d;font-size:30px;padding:22px 0}
+#slider{width:100%;margin:8px 0 14px}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="pad">
+  <header><h1>かたむけて そそげ</h1><span id="badge">…</span></header>
+  <main>
+    <div id="conn">モニターに つないでいます…</div>
+    <div id="app" hidden>
+      <div class="card"><div class="msg" id="msg"></div><div class="small" id="sub"></div><canvas id="bottle" width="160" height="160"></canvas></div>
+      <button class="big" id="ready">じゅんび OK！</button>
+      <div id="hostbox" hidden><button class="big" id="start">スタート</button><button class="big" id="back" style="background:#7a6a60">ロビーへ</button></div>
+      <button class="big" id="done" hidden>できた！</button>
+      <div id="sliderbox" hidden><div class="small">センサーが うごかない ときは これで かたむける</div><input type="range" id="slider" min="0" max="180" value="0"></div>
+      <div class="card">
+        <h2>あそびかた</h2>
+        <ol class="how">
+          <li>スマホを たてに もつ（これが ボトル）</li>
+          <li>ゆっくり かたむけると、モニターの グラスに そそげる。たくさん かたむけるほど いきおいよく でる</li>
+          <li>グラスの せんの ところで、まっすぐに もどして「できた！」</li>
+          <li>ぴったりほど こうとくてん。あふれたら 0てん</li>
+          <li>さいごは カクテル。1しょくめで「できた！」、2しょくめも そそいで「できた！」</li>
+        </ol>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+/* =====================================================================
+   PAD: モニター × スマホ の きょうつう ぶひん（スマホゲーム/<id>/src.html に build で うめこむ）
+   ・PAD.isPad            ... ?room= が あれば スマホ（コントローラー）、なければ モニター
+   ・PAD.host({...})      ... モニター: へやを つくる。さいだい max 人。1P〜4P の いろを わりあてる
+   ・PAD.join({...})      ... スマホ: へやに はいる
+   ・PAD.sensors          ... スマホ: かたむき・うごき（iPhone の きょかも ここ）
+   ・PAD.sfx              ... こうかおん（ファイルなし。その場で つくる）
+   ・PAD.draw(cx)         ... モニター: パネル・もじ・ほし・QR・ロビー画面
+   つなぎかた: PeerJS（WebRTC）。モニターの ID は "<ゲームid>-<へやコード>"
+   ===================================================================== */
+const PAD = (() => {
+  const Q = new URLSearchParams(location.search);
+  const ROOM = (Q.get('room') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const COLORS = ['#e5484d', '#3d6bd6', '#f5c518', '#30a46c'];
+  const COLOR_NAMES = ['あか', 'あお', 'きいろ', 'みどり'];
+  const NAMES = ['1P', '2P', '3P', '4P'];
+  const INK = '#3a2328', PAPER = '#fffaf0';
+  const FONT = '"Hiragino Maru Gothic ProN","Yu Gothic UI","Meiryo",sans-serif';
+  const online = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  const rand = (n, abc = 'abcdefghjkmnpqrstuvwxyz23456789') => Array.from({ length: n }, () => abc[Math.random() * abc.length | 0]).join('');
+
+  /* ---------- モニター: へやを つくる ---------- */
+  function host({ id, max = 4, onJoin, onLeave, onData }) {
+    const code = rand(5);
+    const url = location.href.split(/[?#]/)[0] + '?room=' + code;
+    const players = new Array(max).fill(null);  // slot → { pid, slot, color, cname, name, conn, token, online }
+    let peer = null, status = 'じゅんびちゅう…', qr = null;
+    try { const q = qrcode(0, 'M'); q.addData(url); q.make(); qr = q; } catch (e) {}
+    const R = {
+      code, url, players, max, qr, online,
+      get status() { return status; },
+      list() { return players.filter(p => p && p.online); },
+      count() { return players.filter(p => p && p.online).length; },
+      get(pid) { return players[pid - 1] || null; },
+      send(pid, o) { const p = players[pid - 1]; if (p && p.online && p.conn.open) try { p.conn.send(o); } catch (e) {} },
+      broadcast(o) { for (const p of players) if (p && p.online && p.conn.open) try { p.conn.send(o); } catch (e) {} },
+    };
+    if (typeof Peer === 'undefined') { status = 'インターネットに つながっていないよ'; return R; }
+    peer = new Peer(id + '-' + code);
+    peer.on('open', () => { status = ''; });
+    peer.on('connection', c => {
+      c.on('data', d => {
+        if (!d || typeof d !== 'object') return;
+        if (d.t === 'hello') {
+          // おなじ スマホが つなぎなおしたら おなじ ばしょ。なければ あいている ばしょ → きれた ひとの ばしょ
+          let slot = players.findIndex(p => p && p.token === d.token);
+          if (slot < 0) slot = players.findIndex(p => !p);
+          if (slot < 0) slot = players.findIndex(p => p && !p.online);
+          if (slot < 0) { try { c.send({ t: 'full' }); } catch (e) {} setTimeout(() => c.close(), 400); return; }
+          const back = !!(players[slot] && players[slot].token === d.token);
+          if (back && players[slot].conn !== c) try { players[slot].conn.close(); } catch (e) {}
+          const p = Object.assign(players[slot] && back ? players[slot] : {}, { pid: slot + 1, slot, color: COLORS[slot], cname: COLOR_NAMES[slot], name: NAMES[slot], conn: c, token: d.token, online: true });
+          players[slot] = p; c._p = p;
+          c.send({ t: 'welcome', pid: p.pid, color: p.color, cname: p.cname, name: p.name });
+          sfx.join();
+          onJoin && onJoin(p, back);
+          return;
+        }
+        if (c._p && c._p.conn === c) onData && onData(c._p, d);
+      });
+      c.on('close', () => { const p = c._p; if (p && p.conn === c) { p.online = false; onLeave && onLeave(p); } });
+    });
+    peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) {} });
+    peer.on('error', e => { if (e.type !== 'peer-unavailable') status = 'つなぐ ところで エラー（' + (e.type || '') + '）'; });
+    return R;
+  }
+
+  /* ---------- スマホ: へやに はいる ---------- */
+  function join({ id, onWelcome, onData }) {
+    let token = ''; try { token = sessionStorage.getItem('pad-token') || ''; } catch (e) {}
+    if (!token) { token = rand(12); try { sessionStorage.setItem('pad-token', token); } catch (e) {} }
+    let conn = null; const me = {};
+    const $c = document.getElementById('conn'), $a = document.getElementById('app');
+    function fail(html) {
+      if ($a) $a.hidden = true; if (!$c) return; $c.hidden = false;
+      $c.innerHTML = html + '<button class="big" onclick="location.reload()">もういちど つなぐ</button>';
+    }
+    const peer = new Peer();
+    peer.on('open', () => {
+      conn = peer.connect(id + '-' + ROOM, { reliable: true });
+      const to = setTimeout(() => { if (!conn.open) fail('モニターが みつからないよ。<br>モニターの QRコードを もういちど よんでね'); }, 12000);
+      conn.on('open', () => { clearTimeout(to); conn.send({ t: 'hello', token }); });
+      conn.on('data', d => {
+        if (!d || typeof d !== 'object') return;
+        if (d.t === 'welcome') {
+          Object.assign(me, d);
+          if ($c) $c.hidden = true; if ($a) $a.hidden = false;
+          const b = document.getElementById('badge'); if (b) { b.textContent = d.name + '（' + d.cname + '）'; b.style.background = d.color; b.style.color = d.color === '#f5c518' ? INK : '#fff'; }
+          document.documentElement.style.setProperty('--me', d.color);
+          onWelcome && onWelcome(d);
+        } else if (d.t === 'full') fail('もう いっぱいだよ（' + NAMES.length + 'にんまで）');
+        else if (d.t === 'vibe') { if (navigator.vibrate) navigator.vibrate(d.ms || 60); }
+        else if (d.t === 'sfx') { if (typeof sfx[d.n] === 'function' && d.n !== 'unlock' && d.n !== 'ok') sfx[d.n](d.u); }
+        else onData && onData(d);
+      });
+      conn.on('close', () => fail('きれちゃった。<br>モニターの QRコードを もういちど よんでね'));
+    });
+    peer.on('error', e => fail('つなげなかったよ（' + (e.type || 'error') + '）。<br>モニターの QRコードを もういちど よんでね'));
+    // がめんが きえないように
+    let lock = null;
+    async function keepAwake() { try { if (navigator.wakeLock && !lock) { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => { lock = null; }); } } catch (e) {} }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+    return { me, send(o) { if (conn && conn.open) try { conn.send(o); } catch (e) {} }, keepAwake };
+  }
+
+  /* ---------- スマホ: センサー ---------- */
+  const sensors = (() => {
+    let asked = false, granted = false;
+    const ori = { beta: 0, gamma: 0, alpha: 0, ok: false }, base = { beta: 0, gamma: 0, alpha: 0 };
+    const subs = { motion: [], orient: [] };
+    window.addEventListener('deviceorientation', e => {
+      if (e.beta == null) return; ori.beta = e.beta; ori.gamma = e.gamma; ori.alpha = e.alpha || 0; ori.ok = true;
+      for (const f of subs.orient) f(ori);
+    });
+    window.addEventListener('devicemotion', e => { for (const f of subs.motion) f(e); });
+    const wrap = a => { while (a > 180) a -= 360; while (a < -180) a += 360; return a; };
+    return {
+      ori,
+      // iPhone は ボタンを おした ときに きょかを もらう ひつようが ある
+      async request() {
+        if (asked) return granted; asked = true;
+        try {
+          if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') { if (await DeviceMotionEvent.requestPermission() !== 'granted') return granted = false; }
+          if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') { if (await DeviceOrientationEvent.requestPermission() !== 'granted') return granted = false; }
+        } catch (e) { return granted = false; }
+        return granted = true;
+      },
+      on(type, f) { subs[type].push(f); },
+      // いまの むきを「まっすぐ」に する
+      calibrate() { base.beta = ori.beta; base.gamma = ori.gamma; base.alpha = ori.alpha; },
+      // かたむき（-1〜1）。range 度で いっぱい
+      tilt(range = 25) {
+        const c = v => Math.max(-1, Math.min(1, v));
+        return { x: c(wrap(ori.gamma - base.gamma) / range), y: c(wrap(ori.beta - base.beta) / range) };
+      },
+      rel() { return { beta: wrap(ori.beta - base.beta), gamma: wrap(ori.gamma - base.gamma), alpha: wrap(ori.alpha - base.alpha) }; },
+      // ふった「山」を みつける。f(つよさ m/s², いまの加速度ベクトル)
+      onShake(f, { th = 13, gap = 170 } = {}) {
+        let inPeak = 0, peak = 0, last = 0, vec = null; const g = [0, 0, 9.8];
+        subs.motion.push(e => {
+          let x, y, z; const a = e.acceleration;
+          if (a && a.x != null) { x = a.x; y = a.y; z = a.z; }
+          else { const q = e.accelerationIncludingGravity; if (!q || q.x == null) return; g[0] += (q.x - g[0]) * 0.1; g[1] += (q.y - g[1]) * 0.1; g[2] += (q.z - g[2]) * 0.1; x = q.x - g[0]; y = q.y - g[1]; z = q.z - g[2]; }
+          const m = Math.hypot(x, y, z), now = performance.now();
+          if (m > th) { if (!inPeak) { inPeak = now; peak = m; vec = [x, y, z]; } else if (m > peak) { peak = m; vec = [x, y, z]; } }
+          if (inPeak && (m < th * 0.6 || now - inPeak > 350)) { inPeak = 0; if (now - last > gap) { last = now; f(Math.min(60, peak), vec); } }
+        });
+      },
+    };
+  })();
+
+  /* ---------- こうかおん ---------- */
+  const sfx = (() => {
+    let ac = null, nb = null;
+    function unlock() { if (!ac) try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} if (ac && ac.state === 'suspended') ac.resume(); }
+    const ok = () => !!ac && ac.state === 'running';
+    function noise({ dur = 0.2, f0 = 1000, f1 = f0, type = 'bandpass', q = 1, vol = 0.3, delay = 0 } = {}) {
+      if (!ok()) return;
+      if (!nb) { nb = ac.createBuffer(1, ac.sampleRate, ac.sampleRate); const d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+      const t = ac.currentTime + delay, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+      s.buffer = nb; f.type = type; f.Q.value = q; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t + dur);
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + Math.min(0.02, dur * 0.2)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      s.connect(f); f.connect(g); g.connect(ac.destination); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+    }
+    function tone({ f0 = 660, f1 = f0, dur = 0.15, vol = 0.15, type = 'triangle', delay = 0 } = {}) {
+      if (!ok()) return;
+      const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.setValueAtTime(f0, t); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
+    }
+    addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
+    return {
+      unlock, ok, noise, tone,
+      join() { tone({ f0: 660, dur: 0.12 }); tone({ f0: 990, dur: 0.22, delay: 0.1 }); },
+      tap() { tone({ f0: 880, f1: 1200, dur: 0.06, vol: 0.1, type: 'sine' }); },
+      count() { tone({ f0: 660, dur: 0.14, vol: 0.16, type: 'square' }); },
+      go() { tone({ f0: 1047, dur: 0.4, vol: 0.16, type: 'square' }); tone({ f0: 1568, dur: 0.4, vol: 0.08 }); },
+      tick() { tone({ f0: 1200, dur: 0.05, vol: 0.12, type: 'square' }); },
+      good() { tone({ f0: 784, dur: 0.12, vol: 0.16 }); tone({ f0: 1175, dur: 0.25, vol: 0.16, delay: 0.09 }); },
+      bad() { tone({ f0: 330, f1: 220, dur: 0.3, vol: 0.14, type: 'square' }); },
+      fanfare() { [523, 659, 784, 1047].forEach((f, i) => tone({ f0: f, dur: i === 3 ? 0.6 : 0.18, vol: 0.17, delay: i * 0.14 })); },
+    };
+  })();
+
+  /* ---------- モニター: えがく どうぐ ---------- */
+  function draw(cx) {
+    const D = {
+      INK, PAPER, FONT,
+      rr(x, y, w, h, r) { cx.beginPath(); cx.roundRect ? cx.roundRect(x, y, w, h, r) : cx.rect(x, y, w, h); },
+      panel(x, y, w, h, fill = PAPER, r = 18) { cx.fillStyle = INK; D.rr(x, y + 6, w, h, r); cx.fill(); cx.fillStyle = fill; D.rr(x, y, w, h, r); cx.fill(); cx.lineWidth = 4; cx.strokeStyle = INK; cx.stroke(); },
+      text(t, x, y, size, color = INK, align = 'center', outline = null) {
+        cx.font = `bold ${size}px ${FONT}`; cx.textAlign = align; cx.textBaseline = 'middle';
+        if (outline) { cx.lineJoin = 'round'; cx.lineWidth = size * 0.22; cx.strokeStyle = outline; cx.strokeText(t, x, y); }
+        cx.fillStyle = color; cx.fillText(t, x, y);
+      },
+      star(x, y, r, on = true) {
+        cx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r * 0.45 : r; cx.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q); }
+        cx.closePath(); cx.fillStyle = on ? '#f5c518' : '#e6dccb'; cx.fill(); cx.lineWidth = Math.max(2, r * 0.12); cx.lineJoin = 'round'; cx.strokeStyle = INK; cx.stroke();
+      },
+      qr(room, x, y, size) {
+        cx.fillStyle = INK; D.rr(x - 8, y - 8, size + 16, size + 16, 12); cx.fill();
+        cx.fillStyle = '#fff'; cx.fillRect(x, y, size, size);
+        const q = room.qr; if (!q) return; const n = q.getModuleCount(), m = 2, cell = size / (n + m * 2);
+        cx.fillStyle = '#000';
+        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) cx.fillRect(Math.floor(x + (c + m) * cell), Math.floor(y + (r + m) * cell), Math.ceil(cell), Math.ceil(cell));
+      },
+      // ロビー: ひだりに QR、みぎに さんかしゃ
+      lobby(room, W, H, { title, sub, hint, min = 1 }) {
+        const pw = Math.min(W * 0.9, H * 1.5), ph = H * 0.84, x = (W - pw) / 2, y = H * 0.07;
+        D.panel(x, y, pw, ph);
+        D.text(title, x + pw / 2, y + ph * 0.09, ph * 0.08);
+        if (sub) D.text(sub, x + pw / 2, y + ph * 0.17, ph * 0.034, '#7a6a60');
+        const qs = Math.min(pw * 0.36, ph * 0.52), qx = x + pw * 0.06, qy = y + ph * 0.25;
+        if (online) {
+          D.qr(room, qx, qy, qs);
+          D.text('スマホの カメラで よみとってね', qx + qs / 2, qy + qs + ph * 0.06, ph * 0.032);
+          D.text(room.status || ('へやの ばんごう ' + room.code.toUpperCase()), qx + qs / 2, qy + qs + ph * 0.11, ph * 0.026, room.status ? '#d63a32' : '#7a6a60');
+        } else {
+          cx.fillStyle = '#f3e8d6'; D.rr(qx, qy, qs, qs, 12); cx.fill();
+          D.text('QRコードは https で', qx + qs / 2, qy + qs * 0.42, ph * 0.03); D.text('ひらくと でます', qx + qs / 2, qy + qs * 0.52, ph * 0.03);
+        }
+        const lx = x + pw * 0.5, lw = pw * 0.44, sh = ph * 0.12;
+        D.text('さんか する ひと', lx + lw / 2, qy + ph * 0.01, ph * 0.034);
+        for (let i = 0; i < room.max; i++) {
+          const p = room.players[i], yy = qy + ph * 0.06 + i * (sh + ph * 0.025), on = p && p.online;
+          cx.fillStyle = on ? COLORS[i] : '#eee4d4'; D.rr(lx, yy, lw, sh, 14); cx.fill(); cx.lineWidth = 3; cx.strokeStyle = INK; cx.stroke();
+          D.text(NAMES[i], lx + sh * 0.6, yy + sh / 2, sh * 0.42, on ? (i === 2 ? INK : '#fff') : '#b5a898');
+          D.text(on ? (p.ready ? 'じゅんび OK！' : 'さんか ちゅう') :(p ? 'きれた…' : 'まっています'), lx + lw * 0.58, yy + sh / 2, sh * 0.32, on ? (i === 2 ? INK : '#fff') : '#b5a898');
+        }
+        if (hint) D.text(hint, x + pw / 2, y + ph * 0.94, ph * 0.034, room.count() >= min ? '#2f9e5b' : '#7a6a60');
+      },
+      // まんなかの けっか パネル。rows: [{ color, a, b, hi }]
+      result(W, H, title, rows, foot, u = 1) {
+        const pw = Math.min(W * 0.62, H * 1.15), ph = H * (0.3 + rows.length * 0.085), x = (W - pw) / 2, y = (H - ph) / 2;
+        cx.save(); cx.translate(W / 2, H / 2); cx.scale(0.85 + 0.15 * u, 0.85 + 0.15 * u); cx.translate(-W / 2, -H / 2);
+        D.panel(x, y, pw, ph);
+        D.text(title, x + pw / 2, y + H * 0.08, H * 0.065);
+        rows.forEach((r, i) => {
+          const yy = y + H * 0.17 + i * H * 0.085;
+          if (r.color) { cx.fillStyle = r.color; cx.beginPath(); cx.arc(x + pw * 0.16, yy, H * 0.028, 0, Math.PI * 2); cx.fill(); cx.lineWidth = 3; cx.strokeStyle = INK; cx.stroke(); }
+          D.text(r.a, x + pw * 0.23, yy, H * 0.044, INK, 'left'); D.text(r.b || '', x + pw * 0.88, yy, H * 0.044, r.hi ? '#d63a32' : INK, 'right');
+        });
+        if (foot) D.text(foot, x + pw / 2, y + ph - H * 0.05, H * 0.03, '#7a6a60');
+        cx.restore();
+      },
+      // けっかの タイトル（1いが ふたり いじょう なら ひきわけ）
+      winTitle(r) { const top = r.filter(x => x.place === 1); return top.length > 1 ? 'ひきわけ！' : 'ゆうしょうは ' + top[0].name + '！'; },
+      // じゅんいを つける（おなじ てんは おなじ じゅんい）
+      rank(list, key = 'pts', desc = true) {
+        const a = list.slice().sort((p, q) => desc ? q[key] - p[key] : p[key] - q[key]);
+        a.forEach((r, i) => { r.place = i && a[i - 1][key] === r[key] ? a[i - 1].place : i + 1; }); return a;
+      },
+      soundHint(W, H) {
+        if (sfx.ok()) return; const h = H * 0.055, w = h * 6.8, x = (W - w) / 2, y = H - h - 10;  // した まんなか
+        D.panel(x, y, w, h, '#fff3c4', 12); D.text('クリックすると おとが でるよ', x + w / 2, y + h / 2, h * 0.36);
+      },
+    };
+    return D;
+  }
+
+  // モニターの キャンバス（DPR たいおう）
+  function canvas(el, onResize) {
+    const cx = el.getContext('2d'); const S = { W: 0, H: 0 };
+    function fit() { const d = Math.min(2, devicePixelRatio || 1); S.W = innerWidth; S.H = innerHeight; el.width = Math.round(S.W * d); el.height = Math.round(S.H * d); cx.setTransform(d, 0, 0, d, 0, 0); if (onResize && ready) onResize(S.W, S.H); }
+    // さいしょの 1かいは よばない（ゲームの へんすうが まだ できていない ため）
+    let ready = false; addEventListener('resize', fit); fit(); ready = true; return { cx, S };
+  }
+  function loop(f) { let last = performance.now(); const tick = now => { const dt = Math.min(0.05, (now - last) / 1000); last = now; f(dt); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }  // さいしょも つぎの フレームから（ゲームの へんすうが できてから）
+
+  /* ---------- モニター: ゲームの ながれ（ロビー → 3・2・1 → プレイ → けっか） ----------
+     spec: { id, title, sub, min, max, bg, init(members), update(dt), draw(), onData(p, d), stateFor(p), onKey(e), resize(W, H) }
+     api.finish(title, rows) で けっか。rows: [{ color, a, b, hi }] */
+  function game(spec) {
+    const api = { st: 'lobby', t: 0, members: [], final: null };
+    const { cx, S } = canvas(document.getElementById('cv'), (W, H) => spec.resize && spec.resize(W, H));
+    const D = draw(cx); Object.assign(api, { cx, D, S });
+    const min = spec.min || 1;
+    const room = host({
+      id: spec.id, max: spec.max || 4,
+      onJoin: p => { spec.onJoin && spec.onJoin(p); push(); },
+      onLeave: p => { spec.onLeave && spec.onLeave(p); push(); },
+      onData: (p, d) => {
+        if (d.t === 'ready') { p.ready = true; push(); return; }
+        if (d.t === 'start') { if (isHost(p) && (api.st === 'lobby' || api.st === 'final')) begin(); return; }
+        if (d.t === 'lobby') { if (isHost(p) && api.st === 'final') { api.st = 'lobby'; push(); } return; }
+        if (api.st === 'play' || spec.dataAlways) spec.onData && spec.onData(p, d);
+      },
+    });
+    api.room = room;
+    const isHost = p => { const l = room.list(); return !!l.length && l[0].pid === p.pid; };
+    function begin() {
+      const l = room.list();
+      if (l.length < min) { if (min > 1 || !spec.keyboard) { sfx.bad(); return; } }
+      api.members = l.length ? l : [{ pid: 1, color: COLORS[0], cname: COLOR_NAMES[0], name: NAMES[0], kb: true, online: true }];
+      api.final = null; api.t = 0; api.st = 'count';
+      spec.init(api.members); room.broadcast({ t: 'calib' }); push();
+    }
+    api.begin = begin;
+    api.finish = (title, rows) => { api.st = 'final'; api.t = 0; api.final = { title, rows }; sfx.fanfare(); room.broadcast({ t: 'vibe', ms: 200 }); push(); };
+    let lastPush = 0;
+    function push(force = true) {
+      const now = performance.now(); if (!force && now - lastPush < 300) return; lastPush = now;
+      for (const p of room.list()) { let x = {}; try { x = spec.stateFor ? spec.stateFor(p) || {} : {}; } catch (e) { console.error(e); } room.send(p.pid, Object.assign({ t: 'state', st: api.st, host: isHost(p) }, x)); }
+    }
+    api.push = push;
+    api.isHost = isHost;
+    api.alive = p => p.kb || p.online;
+    addEventListener('keydown', e => {
+      if (e.code === 'Enter' && (api.st === 'lobby' || api.st === 'final')) begin();
+      else if (api.st === 'final' && e.code === 'Escape') { api.st = 'lobby'; push(); }
+      else if (api.st === 'play' && spec.onKey) spec.onKey(e, true);
+    });
+    addEventListener('keyup', e => { if (api.st === 'play' && spec.onKey) spec.onKey(e, false); });
+    loop(dt => {
+      api.t += dt; const W = S.W, H = S.H;
+      if (api.st === 'count') {
+        const n = Math.ceil(3 - api.t), pr = Math.ceil(3 - (api.t - dt)); if (n !== pr && n > 0) sfx.count();
+        if (api.t >= 3) { api.st = 'play'; api.t = 0; sfx.go(); spec.onPlay && spec.onPlay(); push(); }
+      } else if (api.st === 'play') { spec.update(dt); push(false); }
+      cx.clearRect(0, 0, W, H);
+      if (spec.bg) spec.bg(W, H); else { cx.fillStyle = '#efe3cc'; cx.fillRect(0, 0, W, H); }
+      if (api.st === 'lobby') {
+        const n = room.count();
+        D.lobby(room, W, H, { title: spec.title, sub: spec.sub, min,
+          hint: n >= min ? '1P の スマホで スタート（Enter でも はじまる）' : (min > 1 ? 'あと ' + (min - n) + 'にん さんか すると はじめられるよ' : 'スマホが なくても Enter で ためせるよ') });
+      } else {
+        spec.draw(dt);
+        if (api.st === 'count') { const n = Math.ceil(3 - api.t); D.text(String(n), W / 2, H / 2, H * (0.3 - (api.t % 1) * 0.08), '#fff', 'center', INK); if (spec.countMsg) D.text(spec.countMsg, W / 2, H * 0.72, H * 0.05, '#fff', 'center', INK); }
+        if (api.st === 'play' && api.t < 1) D.text('スタート！', W / 2, H / 2, H * 0.12, '#fff', 'center', INK);
+        if (api.st === 'final' && api.final) D.result(W, H, api.final.title, api.final.rows, '1P の スマホで「もういちど」（Enter でも OK）', Math.min(1, api.t / 0.3));
+      }
+      D.soundHint(W, H);
+    });
+    return api;
+  }
+
+  /* ---------- スマホ: ゲームの ながれ ----------
+     HTML に #msg #sub #ready #hostbox（#start #back）が あれば ここで うごかす */
+  function phone({ id, onState, onData, onReady, msgs = {} }) {
+    document.body.classList.add('pad');
+    const $ = i => document.getElementById(i);
+    const P = { st: {}, ready: false };
+    const net = join({ id, onWelcome: () => render(), onData: d => {
+      if (d.t === 'state') { P.st = d; render(); onState && onState(d); }
+      else if (d.t === 'calib') sensors.calibrate();
+      else onData && onData(d);
+    } });
+    function render() {
+      const st = P.st, s = st.st || 'lobby';
+      if ($('ready')) $('ready').hidden = P.ready;
+      if ($('hostbox')) $('hostbox').hidden = !(P.ready && st.host && (s === 'lobby' || s === 'final'));
+      if ($('start')) $('start').textContent = s === 'final' ? 'もういちど' : 'スタート';
+      if ($('back')) $('back').hidden = s !== 'final';
+      let msg = 'つながったよ！', sub = '';
+      if (!P.ready) sub = '「じゅんび OK！」を おしてね';
+      else if (s === 'lobby') { msg = st.host ? 'みんな そろったら スタート' : '1P が スタートするのを まってね'; sub = msgs.lobby || ''; }
+      else if (s === 'count') { msg = msgs.count || 'じゅんび…'; }
+      else if (s === 'final') { msg = st.msg || 'おしまい！'; sub = st.host ? 'もういちど あそぶ？' : 'モニターを みてね'; }
+      if (s === 'play' || st.msg) { msg = st.msg || msg; sub = st.sub || sub; }
+      if ($('msg')) $('msg').textContent = msg; if ($('sub')) $('sub').textContent = sub;
+    }
+    if ($('ready')) $('ready').onclick = async () => {
+      sfx.unlock(); sfx.tap(); await sensors.request(); sensors.calibrate(); net.keepAwake();
+      P.ready = true; net.send({ t: 'ready' }); render(); onReady && onReady();
+    };
+    if ($('start')) $('start').onclick = () => { sfx.tap(); net.send({ t: 'start' }); };
+    if ($('back')) $('back').onclick = () => { sfx.tap(); net.send({ t: 'lobby' }); };
+    return Object.assign(P, { net, send: o => net.send(o), render, me: net.me });
+  }
+
+  return { isPad: !!ROOM, ROOM, COLORS, COLOR_NAMES, NAMES, INK, PAPER, FONT, online, host, join, sensors, sfx, draw, canvas, loop, game, phone };
+})();
+
+</script>
+<script>
+'use strict';
+const GAME_ID = 'pour';
+// 1かいごとの ざいりょう（target は グラスの なんパーセントまで）
+function makeRounds() {
+  const r = (a, b) => Math.round(a + Math.random() * (b - a));
+  const t1 = r(25, 38), t2 = t1 + r(28, 40);
+  return [
+    { name: 'オレンジジュース', items: [{ name: 'オレンジ', color: '#f7a32b', target: 60 }] },
+    { name: 'メロンソーダ', items: [{ name: 'メロン', color: '#5cc46a', target: r(35, 82) }] },
+    { name: 'カクテル', items: [{ name: 'いちご', color: '#e5484d', target: t1 }, { name: 'ソーダ', color: '#6fb3e8', target: t2 }] },
+  ];
+}
+if (PAD.isPad) startPad(); else startMonitor();
+
+function startPad() {
+  const $ = id => document.getElementById(id), S = PAD.sensors;
+  let ang = 0, sgn = 0, lastMot = 0, gx = 0, gy = 9.8;
+  const P = PAD.phone({ id: GAME_ID, msgs: { count: 'スマホを たてに もってね' }, onState: d => {
+    $('done').hidden = !(d.st === 'play' && d.pouring);
+    $('sliderbox').hidden = !(d.st === 'play' || d.st === 'count') || performance.now() - lastMot < 1500;
+  } });
+  // まっすぐ（たて）の ときの じゅうりょくの むきを おぼえる（iPhone と Android で むきが ぎゃく）
+  const cal0 = S.calibrate; S.calibrate = () => { cal0(); if (performance.now() - lastMot < 1000) sgn = Math.sign(gy) || 1; };
+  S.on('motion', e => { const g = e.accelerationIncludingGravity; if (!g || g.x == null) return; gx += (g.x - gx) * 0.3; gy += (g.y - gy) * 0.3; lastMot = performance.now(); if (!sgn) sgn = Math.sign(gy) || 1;
+    ang = Math.atan2(Math.abs(gx), gy * sgn) * 180 / Math.PI; });
+  $('done').onclick = () => { PAD.sfx.tap(); P.send({ t: 'done' }); };
+  const bc = $('bottle'), bx = bc.getContext('2d');
+  let t0 = 0;
+  (function frame(now) {
+    const a = performance.now() - lastMot < 1000 ? ang : +$('slider').value;
+    if (now - t0 > 50) { t0 = now; P.send({ t: 'ang', a: Math.round(a) }); }
+    bx.clearRect(0, 0, 160, 160); bx.save(); bx.translate(80, 95); bx.rotate(-a * Math.PI / 180);
+    bx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--me'); bx.strokeStyle = PAD.INK; bx.lineWidth = 4;
+    bx.beginPath(); bx.roundRect(-22, -40, 44, 80, 10); bx.fill(); bx.stroke(); bx.fillStyle = '#fff'; bx.fillRect(-9, -62, 18, 24); bx.strokeRect(-9, -62, 18, 24); bx.restore();
+    requestAnimationFrame(frame);
+  })(0);
+}
+
+function startMonitor() {
+  let G = {}; const ang = {};
+  const api = PAD.game({
+    id: GAME_ID, title: 'かたむけて そそげ', sub: 'スマホを ボトルに して、グラスに ぴったり そそごう（1〜4にん）', keyboard: true, countMsg: 'スマホを たてに もってね',
+    init(members) {
+      G = { rounds: makeRounds(), round: 0, phase: 'pour', pt: 0, total: {}, pl: {} };
+      for (const p of members) { G.total[p.pid] = 0; ang[p.pid] = 0; }
+      startRound();
+    },
+    onData(p, d) {
+      if (d.t === 'ang') ang[p.pid] = +d.a || 0;
+      else if (d.t === 'done') finishItem(p.pid);
+    },
+    stateFor(p) {
+      const s = G.pl && G.pl[p.pid]; if (!s) return {};
+      if (api.st === 'final') { const r = ranking().find(r => r.pid === p.pid); return { msg: r ? (r.place === 1 ? 'ゆうしょう！' : r.place + 'い') + ' ' + r.pts + 'てん' : '' }; }
+      const R = G.rounds[G.round], it = R.items[s.idx];
+      if (G.phase === 'show') return { msg: s.score + 'てん！', sub: 'つぎを まってね', pouring: false };
+      if (s.locked) return { msg: 'できた！', sub: 'ほかの ひとを まってね', pouring: false };
+      return { msg: it.name + 'を そそげ！', sub: 'せんまで いれたら「できた！」' + (R.items.length > 1 ? '（' + (s.idx + 1) + '/' + R.items.length + 'しょくめ）' : ''), pouring: true };
+    },
+    update(dt) {
+      G.pt += dt;
+      if (G.phase === 'pour') {
+        for (const p of api.members) {
+          const s = G.pl[p.pid]; if (s.locked) continue;
+          const a = p.kb ? kbAng : ang[p.pid] || 0, rate = Math.pow(Math.max(0, Math.min(1, (a - 65) / 75)), 1.4) * 40;
+          s.flow = rate; s.ang = a;
+          if (rate > 0) { s.amt[s.idx] += rate * dt; s.sndT -= dt; if (s.sndT <= 0) { s.sndT = 0.09; PAD.sfx.noise({ dur: 0.12, f0: 500 + s.total() * 12, f1: 400 + s.total() * 12, q: 3, vol: 0.05 + rate / 400 }); } }
+          if (s.total() > 100) { s.over = true; s.locked = true; s.score = 0; s.amt[s.idx] -= s.total() - 100; PAD.sfx.bad(); api.room.send(p.pid, { t: 'vibe', ms: 300 }); api.push(); }
+        }
+        if (G.pt > 25) for (const p of api.members) if (!G.pl[p.pid].locked) finishItem(p.pid, true);
+        if (api.members.every(p => G.pl[p.pid].locked || !api.alive(p))) { G.phase = 'show'; G.pt = 0; for (const p of api.members) G.total[p.pid] += G.pl[p.pid].score; PAD.sfx.good(); api.push(); }
+      } else if (G.phase === 'show' && G.pt > 3.5) {
+        G.round++; if (G.round >= G.rounds.length) { const r = ranking(); api.finish(D.winTitle(r), r.map(r => ({ color: r.color, a: r.place + 'い  ' + r.name, b: r.pts + 'てん', hi: r.place === 1 }))); }
+        else startRound();
+      }
+    },
+    draw() { drawScene(); },
+    bg(W, H) { cx.fillStyle = '#f6e7cf'; cx.fillRect(0, 0, W, H); cx.fillStyle = '#c98c5a'; cx.fillRect(0, H * 0.8, W, H * 0.2); cx.fillStyle = '#b37848'; cx.fillRect(0, H * 0.8, W, H * 0.025); },
+    onKey(e, down) { if (e.code === 'Space') kbAng = down ? 130 : 0; if (e.code === 'Enter' && down && api.members[0].kb) finishItem(1); },
+  });
+  let kbAng = 0;
+  const cx = api.cx, D = api.D, S = api.S, INK = PAD.INK;
+  const ranking = () => D.rank(api.members.map(p => ({ pid: p.pid, name: p.name, color: p.color, pts: G.total[p.pid] || 0 })));
+  function startRound() {
+    G.phase = 'pour'; G.pt = 0; const n = G.rounds[G.round].items.length;
+    for (const p of api.members) G.pl[p.pid] = { idx: 0, amt: new Array(n).fill(0), locked: false, score: 0, scores: [], flow: 0, ang: 0, sndT: 0, over: false, total() { return this.amt.reduce((a, b) => a + b, 0); } };
+    api.room.broadcast({ t: 'calib' }); api.push();
+  }
+  function finishItem(pid, timeout) {
+    const s = G.pl[pid]; if (!s || s.locked || G.phase !== 'pour' || api.st !== 'play') return;
+    const R = G.rounds[G.round], it = R.items[s.idx], diff = Math.abs(s.total() - it.target);
+    s.scores.push(Math.max(0, Math.round(100 - diff * 6)));
+    if (s.idx < R.items.length - 1 && !timeout) { s.idx++; PAD.sfx.tap(); }
+    else { s.locked = true; s.score = Math.round(s.scores.reduce((a, b) => a + b, 0) / R.items.length); s.score >= 85 ? PAD.sfx.good() : PAD.sfx.tone({ f0: 660, dur: 0.15 }); api.room.send(pid, { t: 'vibe', ms: 80 }); }
+    api.push();
+  }
+  function drawScene() {
+    const W = S.W, H = S.H, n = api.members.length, cw = W / n, R = G.rounds[G.round] || G.rounds[G.rounds.length - 1];
+    D.text((Math.min(G.round, G.rounds.length - 1) + 1) + 'かいめ：' + R.name, W / 2, H * 0.06, H * 0.055, '#fff', 'center', INK);
+    api.members.forEach((p, i) => {
+      const s = G.pl[p.pid]; if (!s) return;
+      const gx = cw * (i + 0.5), gw = Math.min(cw * 0.42, H * 0.22), gh = gw * 1.45, gb = H * 0.8, gt = gb - gh;
+      // グラス（したが すこし せまい）
+      const glass = () => { cx.beginPath(); cx.moveTo(gx - gw / 2, gt); cx.lineTo(gx - gw * 0.4, gb); cx.lineTo(gx + gw * 0.4, gb); cx.lineTo(gx + gw / 2, gt); };
+      cx.save(); glass(); cx.closePath(); cx.fillStyle = 'rgba(255,255,255,0.55)'; cx.fill(); cx.clip();
+      let acc = 0; s.amt.forEach((a, k) => { const y0 = gb - gh * acc / 100, y1 = gb - gh * Math.min(100, acc + a) / 100; cx.fillStyle = R.items[k].color; cx.fillRect(gx - gw, y1, gw * 2, y0 - y1 + 1); acc += a; });
+      if (acc > 0) { cx.fillStyle = 'rgba(255,255,255,.35)'; cx.fillRect(gx - gw, gb - gh * Math.min(100, acc) / 100, gw * 2, 4); }
+      cx.restore();
+      // せん
+      R.items.forEach((it, k) => { if (k > s.idx && !s.locked) return; const y = gb - gh * it.target / 100; cx.setLineDash([10, 7]); cx.lineWidth = 4; cx.strokeStyle = it.color; cx.beginPath(); cx.moveTo(gx - gw * 0.62, y); cx.lineTo(gx + gw * 0.62, y); cx.stroke(); cx.setLineDash([]);
+        cx.lineWidth = 2; cx.strokeStyle = INK; cx.beginPath(); cx.moveTo(gx + gw * 0.62, y); cx.lineTo(gx + gw * 0.75, y - 10); cx.lineTo(gx + gw * 0.75, y + 10); cx.closePath(); cx.fillStyle = it.color; cx.fill(); cx.stroke(); });
+      cx.lineWidth = 5; cx.strokeStyle = INK; glass(); cx.stroke();
+      // ボトル
+      const cur = R.items[Math.min(s.idx, R.items.length - 1)], a = s.locked ? 0 : (s.ang || 0), bw = gw * 0.42, bh = bw * 2.2;
+      // ボトルの くち（px, py）を じくに まわす。0ど＝たて、90ど＝よこ、180ど＝さかさま
+      const px = gx - gw * 0.1, py = gt - bh * 1.3 - H * 0.02;
+      if (!s.locked && s.flow > 0) { cx.fillStyle = cur.color; cx.globalAlpha = 0.9; const sw = 4 + s.flow * 0.45; cx.fillRect(px - sw / 2, py, sw, gb - gh * Math.min(100, s.total()) / 100 - py); cx.globalAlpha = 1; }
+      cx.save(); cx.translate(px, py); cx.rotate(-Math.min(175, a) * Math.PI / 180);
+      cx.fillStyle = cur.color; cx.strokeStyle = INK; cx.lineWidth = 4;
+      cx.beginPath(); cx.roundRect(-bw / 2, bh * 0.25, bw, bh, 10); cx.fill(); cx.stroke();
+      cx.fillStyle = '#fff'; cx.beginPath(); cx.roundRect(-bw * 0.2, 0, bw * 0.4, bh * 0.3, 4); cx.fill(); cx.stroke();
+      cx.fillStyle = 'rgba(255,255,255,.8)'; cx.beginPath(); cx.roundRect(-bw * 0.35, bh * 0.55, bw * 0.7, bh * 0.35, 6); cx.fill();
+      cx.restore();
+      // なまえ・てん
+      D.panel(gx - cw * 0.4, H * 0.84, cw * 0.8, H * 0.12, p.color);
+      const tc = p.color === '#f5c518' ? INK : '#fff';
+      D.text(p.name + '  ' + (G.total[p.pid] || 0) + 'てん', gx, H * 0.9, H * 0.045, tc);
+      if (s.over) D.text('あふれた！', gx, gt + gh * 0.35, H * 0.06, '#fff', 'center', INK);
+      else if (G.phase === 'show' || s.locked) D.text(s.score + 'てん', gx, gt + gh * 0.35, H * (G.phase === 'show' ? 0.08 : 0.05), s.score >= 85 ? '#ffd23f' : '#fff', 'center', INK);
+      if (G.phase === 'show' && s.score >= 95) D.text('ぴったり！', gx, gt + gh * 0.55, H * 0.045, '#fff', 'center', INK);
+    });
+    if (G.phase === 'pour') D.text('のこり ' + Math.max(0, Math.ceil(25 - G.pt)) + 'びょう', W - 20, H * 0.06, H * 0.04, '#fff', 'right', INK);
+  }
+  window.__game = api; window.__end = () => { G.round = G.rounds.length - 1; G.phase = 'show'; G.pt = 9; };
+}
+</script>
+</body>
+</html>
